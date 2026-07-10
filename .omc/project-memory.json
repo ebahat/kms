@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1783403701365,
-  "projectRoot": "/Users/ehud/workspace/my-crm",
+  "lastScanned": 1783715988359,
+  "projectRoot": "/Users/ehud/workspace/kms",
   "techStack": {
     "languages": [],
     "frameworks": [],
@@ -34,16 +34,150 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 4,
-      "lastAccessed": 1783403701326,
+      "fileCount": 8,
+      "lastAccessed": 1783715988276,
       "keyFiles": [
         "pricing_model_v01.md",
         "requirements_review_v01.md",
+        "requirements_v01.md",
         "requirements_v02.md",
-        "security_requirements_v01.md"
+        "security_audit_plan_v01.md"
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "docs/architecture/system-overview.md",
+      "accessCount": 23,
+      "lastAccessed": 1783717007386,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0003-ingestion-pipeline.md",
+      "accessCount": 15,
+      "lastAccessed": 1783716957804,
+      "type": "file"
+    },
+    {
+      "path": "docs/plans/architecture-adr-pass-07-07-2026-plan.md",
+      "accessCount": 11,
+      "lastAccessed": 1783681383565,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 10,
+      "lastAccessed": 1783717113181,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0001-tenant-scoping-mongoose.md",
+      "accessCount": 9,
+      "lastAccessed": 1783691365088,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0007-hosting-topology-gcp.md",
+      "accessCount": 9,
+      "lastAccessed": 1783716891644,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0004-authn-and-sessions.md",
+      "accessCount": 9,
+      "lastAccessed": 1783716911420,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0002-atlas-data-and-index-design.md",
+      "accessCount": 8,
+      "lastAccessed": 1783691365597,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0009-repo-layout-and-edition-gating.md",
+      "accessCount": 7,
+      "lastAccessed": 1783716964511,
+      "type": "file"
+    },
+    {
+      "path": "docs/test_plan_v01.md",
+      "accessCount": 6,
+      "lastAccessed": 1783680652476,
+      "type": "file"
+    },
+    {
+      "path": "docs/requirements_v02.md",
+      "accessCount": 5,
+      "lastAccessed": 1783691359272,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0008-llm-embedding-providers.md",
+      "accessCount": 5,
+      "lastAccessed": 1783691375515,
+      "type": "file"
+    },
+    {
+      "path": "docs/security_requirements_v01.md",
+      "accessCount": 5,
+      "lastAccessed": 1783691384650,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui/screens_spec_v01.md",
+      "accessCount": 3,
+      "lastAccessed": 1783489482823,
+      "type": "file"
+    },
+    {
+      "path": "docs/requirements_review_v01.md",
+      "accessCount": 3,
+      "lastAccessed": 1783680591432,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/template.md",
+      "accessCount": 3,
+      "lastAccessed": 1783680640877,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0005-rbac-folder-permissions.md",
+      "accessCount": 3,
+      "lastAccessed": 1783691368847,
+      "type": "file"
+    },
+    {
+      "path": "docs/adr/0006-file-storage-and-serving.md",
+      "accessCount": 3,
+      "lastAccessed": 1783691374320,
+      "type": "file"
+    },
+    {
+      "path": "docs/security_audit_plan_v01.md",
+      "accessCount": 2,
+      "lastAccessed": 1783680753837,
+      "type": "file"
+    },
+    {
+      "path": "docs/analytics/posthog_analytics_v01.md",
+      "accessCount": 1,
+      "lastAccessed": 1783637220486,
+      "type": "file"
+    },
+    {
+      "path": "docs/architecture/design-review-2026-07-10.md",
+      "accessCount": 1,
+      "lastAccessed": 1783717044821,
+      "type": "file"
+    },
+    {
+      "path": "docs/plans/adr-0010-schema-migrations-10-07-2026-plan.md",
+      "accessCount": 1,
+      "lastAccessed": 1783717076539,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }

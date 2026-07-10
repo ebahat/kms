@@ -1,0 +1,117 @@
+{
+  "updatedAt": "2026-07-10T10:58:25.636Z",
+  "missions": [
+    {
+      "id": "session:c4c19176-6284-4ecc-ae68-a254a785e5e8:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-07-10T10:57:16.573Z",
+      "updatedAt": "2026-07-10T10:58:25.636Z",
+      "status": "done",
+      "workerCount": 1,
+      "taskCounts": {
+        "total": 1,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 1,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "adr-critic:aadr-cr",
+          "role": "adr-critic",
+          "ownership": "aadr-critic-a8a62c23ddcbd449",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-10T10:58:25.636Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-start:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:57:16.573Z",
+          "at": "2026-07-10T10:57:16.573Z",
+          "kind": "update",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "started adr-critic:aadr-cr",
+          "sourceKey": "session-start:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:03.634Z",
+          "at": "2026-07-10T10:58:03.634Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:06.908Z",
+          "at": "2026-07-10T10:58:06.908Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:09.089Z",
+          "at": "2026-07-10T10:58:09.089Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:12.553Z",
+          "at": "2026-07-10T10:58:12.553Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:15.213Z",
+          "at": "2026-07-10T10:58:15.213Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:17.653Z",
+          "at": "2026-07-10T10:58:17.653Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:20.296Z",
+          "at": "2026-07-10T10:58:20.296Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:22.919Z",
+          "at": "2026-07-10T10:58:22.919Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        },
+        {
+          "id": "session-stop:aadr-critic-a8a62c23ddcbd449:2026-07-10T10:58:25.636Z",
+          "at": "2026-07-10T10:58:25.636Z",
+          "kind": "completion",
+          "agent": "adr-critic:aadr-cr",
+          "detail": "completed",
+          "sourceKey": "session-stop:aadr-critic-a8a62c23ddcbd449"
+        }
+      ]
+    }
+  ]
+}

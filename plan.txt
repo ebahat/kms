@@ -1,0 +1,8 @@
+1. Create docs/adr/ + docs/architecture/ directories and an ADR template.
+2. Write ADRs 0001–0003 (tenant scoping, Atlas data/index design, ingestion pipeline) — the "core three."
+3. Write ADRs 0004–0006 (auth/sessions, RBAC/folder permissions, file storage/serving) — security architecture.
+4. Write ADRs 0007–0009 (GCP hosting topology, LLM/embedding providers, repo layout/edition gating).
+5. Write system-overview.md with the 4 Mermaid diagrams + the §12-checklist traceability table, cross-linking every ADR.
+6. Consistency review pass — diff against requirements_review_v01.md, check for inter-ADR contradictions, fix.
+7. Update root CLAUDE.md per Rule 5 and mark step statuses in the plan file.
+

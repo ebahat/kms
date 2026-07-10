@@ -4,7 +4,7 @@ Multi-tenant knowledge management + AI chat over organizational documents for th
 
 ## Project status
 
-Architecture phase complete, pre-implementation — no application code yet (git repo initialized). All artifacts live in `docs/`. The ADR pass (`docs/plans/architecture-adr-pass-07-07-2026-plan.md`) is COMPLETE: ADRs 0001–0009 **Accepted** (0008 gated on the Hebrew benchmark). A design-quality review (2026-07-10) is applied: Redis split app/queue, provider-outage failure taxonomy, portal-web folded into web — record in `docs/architecture/design-review-2026-07-10.md`.
+Architecture phase complete, pre-implementation — no application code yet (git repo initialized). All artifacts live in `docs/`. The ADR pass (`docs/plans/architecture-adr-pass-07-07-2026-plan.md`) is COMPLETE: ADRs 0001–0009 **Accepted** (0008 gated on the Hebrew benchmark).
 
 ## Documents (read in this order)
 
@@ -15,7 +15,6 @@ Architecture phase complete, pre-implementation — no application code yet (git
 | `docs/security_requirements_v01.md` | Security spec — threat model, tenant-isolation architecture, LLM/RAG threats, Israeli 2017-regs obligations, MVP acceptance checklist |
 | `docs/adr/` | **Accepted ADRs 0001–0009**: tenant scoping, Atlas data/index design, ingestion pipeline (ClamAV in-VPC), auth/sessions (Redis, separate portal realm), RBAC resolution (cached on-read), GCS storage/signed URLs, GCP Cloud Run topology, Vertex AI providers (gated on Hebrew benchmark), pnpm/Turborepo monorepo + edition gating |
 | `docs/architecture/system-overview.md` | Container + data-flow Mermaid diagrams, sec-§12 traceability table, future-ADR list (FINAL for the ADR pass) |
-| `docs/architecture/design-review-2026-07-10.md` | Design-quality review record — 12 findings + dispositions (1/2/8 fixed in ADRs, 9 planned as ADR-0010, rest recorded with triggers) |
 | `docs/test_plan_v01.md` | Test plan — security tests, LLM eval plan (datasets/thresholds), upgrade & maintenance process |
 | `docs/security_audit_plan_v01.md` | Audit program — CI gates (Snyk/gitleaks), AI-assisted review, quarterly deep audits, pentest/SOC 2 cadence |
 | `docs/ui/screens_spec_v01.md` | Screen inventory (P0/P1/P2), roles, states, RTL/security constraints; mockups artifact linked from session notes |
@@ -34,5 +33,4 @@ Architecture phase complete, pre-implementation — no application code yet (git
 
 1. Phased implementation plan (first tasks per ADR-0009: scaffold monorepo + lint guards + CI before feature code)
 2. Author Hebrew golden datasets and run the ADR-0008 benchmark gate (blocks final provider commitment)
-3. Write ADR-0010 schema migrations (plan: `docs/plans/adr-0010-schema-migrations-10-07-2026-plan.md`) — required before first production deploy
-4. WTP interviews + real Hebrew-document token measurements before finalizing pricing
+3. WTP interviews + real Hebrew-document token measurements before finalizing pricing

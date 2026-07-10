@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd docs/architecture && sed -i '' 's/^| \\\\[0001\\\\(.*\\\\)| Proposed |$/| [0001\\\\1| Accepted |/; s/^| \\\\[0002\\\\(.*\\\\)| Proposed |$/| [0002\\\\1| Accepted |/; s/^| \\\\[0003\\\\(.*\\\\)| Proposed |$/|...",
+  "error": "Exit code 1\n(eval):cd:1: no such file or directory: docs/architecture",
+  "timestamp": "2026-07-10T11:02:05.567Z",
+  "retry_count": 1
+}

@@ -1,0 +1,24 @@
+{
+  "agents": [
+    {
+      "agent_id": "aadr-critic-a8a62c23ddcbd449",
+      "agent_type": "adr-critic",
+      "started_at": "2026-07-10T10:49:34.016Z",
+      "parent_mode": "none",
+      "status": "running"
+    },
+    {
+      "agent_id": "aarch-reviewer-a106519d38fa19c2",
+      "agent_type": "arch-reviewer",
+      "started_at": "2026-07-10T13:49:11.478Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-10T13:55:07.720Z",
+      "duration_ms": 356242
+    }
+  ],
+  "total_spawned": 2,
+  "total_completed": 9,
+  "total_failed": 0,
+  "last_updated": "2026-07-10T20:42:30.677Z"
+}

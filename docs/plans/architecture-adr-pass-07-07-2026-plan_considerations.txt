@@ -1,0 +1,66 @@
+1. 0001-tenant-scoping-mongoose.md — Tenant isolation enforcement
+- Repository-layer pattern (base repository vs Mongoose plugin vs both): the mechanical choice of where tenant-filtering code lives. A base repository class means every model's data-access goes through a shared class that always adds {tenantId} to queries. A Mongoose plugin means the schema itself refuses to run without a tenant filter (works even if someone bypasses the repository). "Both" = defense in depth — schema-level plugin as the hard backstop, repository as the ergonomic API.
+- Request-context propagation (NestJS CLS/AsyncLocalStorage): how the current request's tenantId gets from "the authenticated session" to "the database call" without being passed as a function argument everywhere (which is easy to forget/spoof). AsyncLocalStorage holds it implicitly for the life of the request.
+- Compile/lint guard: a mechanism (ESLint rule, TypeScript branded type, or codegen) that makes it a build failure, not just a code-review catch, to call a model method that skips tenant scoping. This is what makes sec §3.1 ("no query may execute without a tenant scope") enforceable rather than aspirational.
+- Per-user scoping reuse for Smart OCR: the Smart OCR edition needs the identical isolation pattern but scoped to userId instead of tenantId (sec §3.6) — the ADR should show the same mechanism parametrized, not a second bespoke system.
+- Cross-tenant CI test suite hook: where in CI this ADR's guarantee gets automatically verified (sec §10 calls this "the single most important test asset").
+
+2. 0002-atlas-data-and-index-design.md — Collections + Vector/Atlas Search
+- Core collections list: the actual schema inventory (tenants, users, folders, documents, versions, chunks, conversations, audit) — what MongoDB collections exist and roughly what fields they carry.
+- Chunk schema with tenantId + permission-filter fields: chunks (the retrieval unit for RAG) need to carry not just the vector embedding but enough metadata (tenantId, folder/permission tokens) to be filtered before the similarity search runs — this is the physical schema that ADR-0005's permission model will query against.
+- Atlas Vector Search index with tenant+folder pre-filter (actual query shape): not just "we'll filter by tenant" but the literal $vectorSearch aggregation stage showing the filter clause — this is what makes acceptance criterion 5 concrete instead of hand-wavy.
+- Atlas Search analyzer for Hebrew prefixes: MongoDB Atlas Search lets you define custom analyzers (tokenizers + char filters); this ADR must specify one that strips/normalizes the ו/ה/ב/ל prefixes so "בבית" and "בית" can both match, per PRD §2.
+- Latest-version-only indexing + immediate vector purge: the index-maintenance rule that when a new document version is uploaded, the old version's vectors are deleted from the index in the same operation — otherwise stale content could still surface in chat answers (PRD §8).
+- Audit append-only store: the schema/mechanism (e.g., a Mongo collection with no update/delete code path, or object-lock export) satisfying sec §8.1.
+
+3. 0003-ingestion-pipeline.md — Async processing
+- BullMQ queue/stage topology: the actual pipeline shape — separate queues (or one queue with stages) for scan → parse → chunk → embed → index, so failures at one stage don't require re-running earlier stages.
+- Sandboxed parser workers: concrete container/runtime spec — no network egress except allowlisted APIs, low privilege, resource limits — that satisfies sec §4.4's requirement to isolate the highest-risk code (parsing attacker-supplied files: XXE, zip bombs).
+- Status model: the state machine (queued/processing/indexed/failed) exposed to the uploader per-document, per PRD §8.
+- Retries/poison handling: what happens when a file repeatedly crashes the parser — dead-letter queue, alerting (sec §8.3 flags "queue poisoning" as a detection signal).
+- OCR branch: how Classic vs Advanced OCR forks within this same pipeline, including where quota/cap checks (PRD §9) gate the job before it starts.
+- p95 ≤ 10 min ingestion target: the pipeline design must be justified against this specific latency budget (PRD §13) — e.g., worker concurrency, queue priority.
+
+4. 0004-authn-and-sessions.md — Identity
+- Server-side session store (Redis) + httpOnly/SameSite cookies: sessions are opaque references stored server-side, not JWTs in the browser — the cookie can't be read by JS (mitigates XSS-driven token theft) and isn't sent cross-site (mitigates CSRF), per sec §2.
+- Argon2id params: concrete parameters (memory ≥ 64 MB, time ≥ 3, per sec §2) rather than defaults, because password-hashing cost is a real security/ops tradeoff worth recording.
+- TOTP + backup codes with field-level encryption: MFA secrets aren't stored in plaintext even inside the database — envelope-encrypted via KMS (sec §7.2), decryptable only within the auth code path.
+- Separate platform-admin auth realm: the super-admin portal (PRD §5) needs its own session cookie name/domain and user store so a compromise of tenant-level auth can't reach platform admin, and vice versa.
+- Lockout/enumeration-resistance mechanics: identical response timing/errors for "wrong password" vs "no such user," progressive delays, and account lockout with admin unlock (sec §2) — the ADR documents the actual thresholds.
+
+5. 0005-rbac-folder-permissions.md — Authorization
+- Users/groups/folder grants, inheritance-with-override: the permission model's data shape — grants attach to users or groups, subfolders inherit from parents unless a grant is explicitly set on them (PRD §7).
+- Effective-permission computation strategy: the actual decision point I described earlier — materialize the user's permitted-folder set at query time vs. store permission tokens on each chunk. This is the ADR's central trade-off (I described this in the previous answer).
+- Immediate propagation: how a permission change reaches the retrieval path with zero lag, satisfying "permission changes take effect immediately" (PRD §7).
+- 404-not-403 policy: the concrete API contract — accessing something out of scope returns "not found," not "forbidden," so an attacker can't distinguish "doesn't exist" from "exists but you can't see it" (sec §3.2).
+
+6. 0006-file-storage-and-serving.md — Object storage
+- GCS bucket layout, per-tenant prefixes + IAM: the actual key-naming scheme (e.g., tenants/{tenantId}/documents/{docId}/...) and bucket IAM policy enforcing it.
+- Streaming upload with magic-byte validation and 50 MB pre-buffer limit: files are validated by their actual byte signature (not filename/extension, which is trivially spoofable) and size-limited before the whole file is buffered in memory, per sec §4.4.
+- Short-lived signed URLs (≤ 5 min, single object) with Content-Disposition: attachment: the mechanism by which files are ever actually delivered to a browser — never a direct/public URL, always a freshly-permission-checked, time-boxed link, forced to download rather than render inline (blocks stored-XSS-via-SVG, sec §3.4/§4.4).
+- Recycle bin + deletion-verification jobs: the soft-delete window (PRD §8/§14) plus automated jobs that actually confirm data is gone from DB, index, and storage after the retention period — "deletion is verified, not assumed" (sec §7.3).
+
+7. 0007-hosting-topology-gcp.md — Infrastructure
+- Cloud Run vs GKE: the compute-platform choice for the API and workers — Cloud Run is simpler/serverless but has constraints (request timeouts, no long-lived background processing that BullMQ workers may need); GKE gives full control at more ops overhead. The ADR picks one and justifies it against the ingestion-worker requirements.
+- Atlas via Private Service Connect: how the GCP compute network reaches MongoDB Atlas without traversing the public internet (sec §6).
+- Memorystore Redis, Cloud Armor WAF, Secret Manager + KMS, Terraform IaC: the concrete GCP-native services filling each infra requirement from sec §6 (private Redis, WAF/DDoS protection, secrets manager, encryption key management, infrastructure-as-code).
+- Backup/DR meeting RPO ≤ 24h / RTO ≤ 8h: the actual backup mechanism and restore procedure sized to hit these PRD §13 numbers.
+
+8. 0008-llm-embedding-providers.md — AI providers
+- Vertex AI as primary: the chosen provider (Gemini for chat, Vertex's multilingual embedding model), per your GCP-aligned direction.
+- Hebrew benchmark gate: the thing I flagged as a risk — a concrete, named test corpus and numeric pass/fail threshold that must be run before this decision is locked in, so "we assumed Hebrew embeddings would work" never becomes a production surprise.
+- Provider abstraction layer: an interface in code so swapping the embedding/chat provider later doesn't require touching every call site — the insurance policy if the benchmark fails.
+- Zero-retention/DPA verification: confirming in writing that Vertex AI's terms satisfy "no training on our data," matching PRD §3/§10 and sec §9's sub-processor table.
+- Prompt architecture: the concrete defense against indirect prompt injection — retrieved chunks wrapped as clearly-delimited untrusted data, no tool-calling surface, citations built from retrieval metadata server-side rather than parsed from model output (sec §5.1).
+
+9. 0009-repo-layout-and-edition-gating.md — Codebase structure
+- Monorepo layout: the actual directory/package structure (api, worker, web, shared libs) that the implementation phase will scaffold from.
+- Module boundaries mapped to PRD sections: which code module owns which PRD requirement (e.g., an ingestion module owns §8/§9, an rbac module owns §7) — this is what keeps the codebase traceable back to requirements as it grows.
+- Edition gating (feature flags vs module composition): how "Smart OCR standalone" vs "Knowledge Base" actually gets decided at runtime — a flag checked everywhere, or entire modules not even loaded for that tenant. This has real security implications (sec §3.6's per-user isolation must hold regardless of which path is chosen).
+- CODEOWNERS security-sensitive paths: which file paths require mandatory review because they touch auth/permissions/tenant-scoping/parsing/prompt construction (sec §10).
+
+10. system-overview.md — Overview
+- Container-level diagram: a Mermaid diagram showing the deployed services (API, workers, web, Atlas, Redis, object storage, LLM APIs) and how they connect.
+- Ingestion data flow, chat/retrieval data flow, Smart-OCR edition flow: three more diagrams tracing a document from upload to searchable index, a query from user input to cited answer, and the separate simpler Smart-OCR upload→OCR→download path — so a reader can see the whole system without reading all 9 ADRs.
+- Traceability table (§12 checklist → ADR sections): a table mapping each of the security spec's 9 MVP acceptance-checklist items to the specific ADR section that satisfies it — proof nothing in that checklist was dropped.
+
