@@ -59,15 +59,15 @@
       "type": "file"
     },
     {
-      "path": "docs/plans/architecture-adr-pass-07-07-2026-plan.md",
-      "accessCount": 11,
-      "lastAccessed": 1783681383565,
+      "path": "CLAUDE.md",
+      "accessCount": 14,
+      "lastAccessed": 1783778037054,
       "type": "file"
     },
     {
-      "path": "CLAUDE.md",
+      "path": "docs/plans/architecture-adr-pass-07-07-2026-plan.md",
       "accessCount": 11,
-      "lastAccessed": 1783718795273,
+      "lastAccessed": 1783681383565,
       "type": "file"
     },
     {
@@ -125,6 +125,30 @@
       "type": "file"
     },
     {
+      "path": "libs/data/src/scoped-repository.ts",
+      "accessCount": 5,
+      "lastAccessed": 1783758327640,
+      "type": "file"
+    },
+    {
+      "path": "docs/plans/implementation-phases-11-07-2026-plan.md",
+      "accessCount": 5,
+      "lastAccessed": 1783778009562,
+      "type": "file"
+    },
+    {
+      "path": "libs/auth/package.json",
+      "accessCount": 4,
+      "lastAccessed": 1783777682899,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/package.json",
+      "accessCount": 4,
+      "lastAccessed": 1783777753663,
+      "type": "file"
+    },
+    {
       "path": "docs/ui/screens_spec_v01.md",
       "accessCount": 3,
       "lastAccessed": 1783489482823,
@@ -161,6 +185,36 @@
       "type": "file"
     },
     {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1783757699295,
+      "type": "file"
+    },
+    {
+      "path": "libs/auth/src/index.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783758680353,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/src/scope.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783777674443,
+      "type": "file"
+    },
+    {
+      "path": "libs/contracts/package.json",
+      "accessCount": 2,
+      "lastAccessed": 1783777803139,
+      "type": "file"
+    },
+    {
+      "path": "turbo.json",
+      "accessCount": 2,
+      "lastAccessed": 1783777948517,
+      "type": "file"
+    },
+    {
       "path": "docs/analytics/posthog_analytics_v01.md",
       "accessCount": 1,
       "lastAccessed": 1783637220486,
@@ -179,9 +233,117 @@
       "type": "file"
     },
     {
-      "path": "docs/plans/implementation-phases-11-07-2026-plan.md",
+      "path": "plan.txt",
       "accessCount": 1,
-      "lastAccessed": 1783718783145,
+      "lastAccessed": 1783757444844,
+      "type": "file"
+    },
+    {
+      "path": "AGENTS.md",
+      "accessCount": 1,
+      "lastAccessed": 1783757445000,
+      "type": "file"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1783757496974,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757503517,
+      "type": "file"
+    },
+    {
+      "path": ".nvmrc",
+      "accessCount": 1,
+      "lastAccessed": 1783757504396,
+      "type": "file"
+    },
+    {
+      "path": "CODEOWNERS",
+      "accessCount": 1,
+      "lastAccessed": 1783757510252,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757518905,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/src/errors.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757523893,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/src/system-scope.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757528619,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/src/backstop.plugin.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757552092,
+      "type": "file"
+    },
+    {
+      "path": "libs/data/src/index.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757554618,
+      "type": "file"
+    },
+    {
+      "path": "libs/auth/tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757562885,
+      "type": "file"
+    },
+    {
+      "path": "libs/permissions/package.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757566476,
+      "type": "file"
+    },
+    {
+      "path": "libs/permissions/tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757567615,
+      "type": "file"
+    },
+    {
+      "path": "libs/permissions/src/index.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757568478,
+      "type": "file"
+    },
+    {
+      "path": "libs/ai-providers/package.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757570002,
+      "type": "file"
+    },
+    {
+      "path": "libs/ai-providers/tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757570844,
+      "type": "file"
+    },
+    {
+      "path": "libs/ai-providers/src/index.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783757571803,
+      "type": "file"
+    },
+    {
+      "path": "libs/contracts/tsconfig.json",
+      "accessCount": 1,
+      "lastAccessed": 1783757575349,
       "type": "file"
     }
   ],
