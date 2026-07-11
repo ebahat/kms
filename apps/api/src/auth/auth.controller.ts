@@ -25,15 +25,15 @@ import {
   createResetToken,
   isResetTokenValid,
   isPasswordBreached,
+  decideLoginHardening,
+  RateLimiter,
+  CaptchaVerifier,
+  SecurityAlertSink,
 } from '@kms/auth';
 import { scopeFromIds, SCOPE_CLS_KEY, Scope, TenantsRepository, UsersRepository } from '@kms/data';
 import { SESSION_SERVICE } from './session-auth.guard';
 import { setSessionCookie, clearSessionCookie } from './cookie';
-import { decideLoginHardening } from './login-hardening';
 import { PASSWORD_PEPPER, KMS_KEY_PROVIDER, RATE_LIMITER, CAPTCHA_VERIFIER, SECURITY_ALERT_SINK } from './auth.providers';
-import { RateLimiter } from '@kms/auth';
-import { CaptchaVerifier } from './captcha';
-import { SecurityAlertSink } from './security-alerts';
 
 const LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60;
 const TOTP_RATE_WINDOW_SECONDS = 5 * 60;

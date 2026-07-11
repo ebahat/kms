@@ -7,3 +7,6 @@ export * from './models/tenant.schema';
 export * from './models/user.schema';
 export * from './repositories/tenants.repository';
 export * from './repositories/users.repository';
+export * from './models/platform-admin.schema';
+export * from './repositories/platform-admins.repository';
+export * from './platform-scope';

@@ -1,10 +1,9 @@
 import { UnauthorizedException } from '@nestjs/common';
 import RedisMock from 'ioredis-mock';
-import { hashPassword, RateLimiter, LocalMasterKeyProvider, encryptField, generateTotpSecret } from '@kms/auth';
+import { hashPassword, RateLimiter, LocalMasterKeyProvider, encryptField, generateTotpSecret, NoopCaptchaVerifier } from '@kms/auth';
 import { SCOPE_CLS_KEY } from '@kms/data';
 import { authenticator } from 'otplib';
 import { AuthController } from './auth.controller';
-import { NoopCaptchaVerifier } from './captcha';
 
 const PEPPER = 'test-pepper';
 const MASTER_KEY_HEX = '11'.repeat(32);

@@ -9,7 +9,13 @@ const CAPTCHA_THRESHOLD = 5;
 const LOCKOUT_THRESHOLD = 10;
 const BASE_DELAY_MS = 1000;
 
-/** Progressive delay after 3 failures, CAPTCHA from the 5th, lockout at 10 with admin unlock (PRD §3, ADR-0004). */
+/**
+ * Progressive delay after 3 failures, CAPTCHA from the 5th, lockout at 10
+ * with admin unlock (PRD §3, ADR-0004). Shared between the tenant realm
+ * (apps/api) and the platform-admin realm (apps/portal-api) — "the same
+ * discipline applies to reset and CSV-import flows" (ADR-0004) generalizes
+ * to any credentialed endpoint across both realms.
+ */
 export function decideLoginHardening(failureCount: number): LoginHardeningDecision {
   return {
     delayMs: failureCount >= DELAY_START_THRESHOLD ? BASE_DELAY_MS * (failureCount - DELAY_START_THRESHOLD + 1) : 0,

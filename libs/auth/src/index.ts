@@ -7,3 +7,6 @@ export * from './kms-envelope';
 export * from './rate-limiter';
 export * from './password-reset';
 export * from './breach-check';
+export * from './login-hardening';
+export * from './captcha';
+export * from './security-alerts';
