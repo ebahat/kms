@@ -19,3 +19,5 @@
 {"t":0,"agent":"aarch-r","agent_type":"arch-reviewer","event":"agent_stop","success":true,"duration_ms":352954}
 {"t":0,"agent":"aarch-r","agent_type":"arch-reviewer","event":"agent_stop","success":true,"duration_ms":356242}
 {"t":0,"agent":"ab4bb2b","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a926933","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"a1833f9","agent_type":"unknown","event":"agent_stop","success":true}

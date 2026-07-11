@@ -1,0 +1,8 @@
+libs/data/**                    @owner
+libs/auth/**                    @owner
+libs/permissions/**              @owner
+apps/worker/src/parse/**         @owner
+apps/api/src/chat/prompt/**      @owner
+apps/api/src/files/**            @owner
+infra/**                        @owner
+test/cross-tenant/**             @owner

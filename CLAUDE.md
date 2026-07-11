@@ -4,7 +4,16 @@ Multi-tenant knowledge management + AI chat over organizational documents for th
 
 ## Project status
 
-Architecture phase complete, pre-implementation — no application code yet (git repo initialized). All artifacts live in `docs/`. The ADR pass (`docs/plans/architecture-adr-pass-07-07-2026-plan.md`) is COMPLETE: ADRs 0001–0009 **Accepted** (0008 gated on the Hebrew benchmark). A design-quality review (2026-07-10) is applied: Redis split app/queue, provider-outage failure taxonomy, portal-web folded into web — record in `docs/architecture/design-review-2026-07-10.md`.
+Architecture phase complete (ADRs 0001–0009 **Accepted**, 0008 gated on the Hebrew benchmark; design-quality review 2026-07-10 applied — see `docs/architecture/design-review-2026-07-10.md`). **Implementation started 2026-07-11** per `docs/plans/implementation-phases-11-07-2026-plan.md`: Phase 0 (monorepo scaffold, `libs/data` tenant-scoping core, lint guards, CI config, cross-tenant harness skeleton, Terraform skeleton) is complete and verified (`pnpm turbo run build lint test:unit` all green). Phase 1's core spine (Argon2id password hashing, Redis-backed sessions, the CLS-scope-populating auth guard, edition gating) is built and unit-tested; TOTP, login hardening, tenant-admin CRUD, portal-api business logic, the web login UI, and ADR-0010 are still open — see the plan file for the exact checklist.
+
+## Monorepo (pnpm + Turborepo, ADR-0009)
+
+```
+apps/{api,portal-api,worker,web}   libs/{data,auth,permissions,ai-providers,contracts,config}
+infra/ (Terraform, not yet applied)   test/{cross-tenant,evals}
+```
+
+Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm turbo run test:unit`, `pnpm test:cross-tenant`. `apps/worker` selects its pool via `WORKER_POOL=parse|ai|index` env. Guard rules live in `eslint.config.mjs` + `eslint-rules/` (mongoose/`InjectModel` confined to `libs/data`; `SystemScope` import confined to `platform-admin/**`/`jobs/**`) — both are smoke-tested, not just configured. `infra/README.md` lists what a real `terraform apply` needs (GCP project id, billing account, domain).
 
 ## Documents (read in this order)
 
@@ -32,7 +41,7 @@ Architecture phase complete, pre-implementation — no application code yet (git
 
 ## Next steps
 
-1. Phased implementation plan (first tasks per ADR-0009: scaffold monorepo + lint guards + CI before feature code)
-2. Author Hebrew golden datasets and run the ADR-0008 benchmark gate (blocks final provider commitment)
-3. Write ADR-0010 schema migrations (plan: `docs/plans/adr-0010-schema-migrations-10-07-2026-plan.md`) — required before first production deploy
-4. WTP interviews + real Hebrew-document token measurements before finalizing pricing
+1. Continue `docs/plans/implementation-phases-11-07-2026-plan.md` Phase 1: TOTP + KMS envelope encryption, login hardening (lockout/CAPTCHA/timing), tenant-admin CRUD, `portal-api` business logic, `web` login/RTL screens, ADR-0010 (schema migrations, task 1.8)
+2. Provision a real GCP project + billing account so the Terraform skeleton (`infra/`) can actually apply
+3. Eval-corpus lane E1 (Hebrew golden datasets) can start in parallel — it blocks the ADR-0008 gate inside Phase 4
+4. WTP interviews + real Hebrew-document token measurements before finalizing pricing (business lane, unblocked)

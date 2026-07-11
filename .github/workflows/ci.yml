@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  PNPM_VERSION: "10.32.1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint
+
+  build:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build
+
+  unit:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run test:unit
+
+  integration:
+    needs: unit
+    runs-on: ubuntu-latest
+    # Real service containers (Mongo/Redis) land with the first repository in Phase 1.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run test:integration
+
+  cross-tenant:
+    needs: integration
+    runs-on: ubuntu-latest
+    # sec §10: "the single most important test asset in the codebase" (ADR-0001).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "${{ env.PNPM_VERSION }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:cross-tenant
+
+  security:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Snyk code scan
+        run: echo "snyk_code_scan runs here (audit plan §2) — wired once SNYK_TOKEN is provisioned"
+      - name: Snyk SCA scan
+        run: echo "snyk_sca_scan runs here (audit plan §2)"
+      - name: Snyk IaC scan
+        run: echo "snyk_iac_scan runs here against infra/ (audit plan §2, ADR-0007)"
+
+  # Dormant until Phase 4 (ADR-0009 CI mapping): triggers only when chat/AI-provider
+  # code paths change, so it never blocks unrelated PRs before those paths exist.
+  eval-canary:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "eval canary — enabled in Phase 4 (test plan §4.8)"

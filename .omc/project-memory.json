@@ -66,8 +66,8 @@
     },
     {
       "path": "CLAUDE.md",
-      "accessCount": 10,
-      "lastAccessed": 1783717113181,
+      "accessCount": 11,
+      "lastAccessed": 1783718795273,
       "type": "file"
     },
     {
@@ -176,6 +176,12 @@
       "path": "docs/plans/adr-0010-schema-migrations-10-07-2026-plan.md",
       "accessCount": 1,
       "lastAccessed": 1783717076539,
+      "type": "file"
+    },
+    {
+      "path": "docs/plans/implementation-phases-11-07-2026-plan.md",
+      "accessCount": 1,
+      "lastAccessed": 1783718783145,
       "type": "file"
     }
   ],

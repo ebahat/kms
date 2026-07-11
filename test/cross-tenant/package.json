@@ -1,0 +1,14 @@
+{
+  "name": "@kms/test-cross-tenant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test:cross-tenant": "jest --passWithNoTests"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "supertest": "^7.0.0"
+  }
+}
