@@ -8,6 +8,7 @@ export type SessionRecord = {
   createdAt: string; // ISO — absolute-lifetime clock
   lastSeenAt: string; // ISO — idle clock
   mfaVerified: boolean;
+  tosVersion?: string; // absent for platform realm — ToS gating applies only to tenant users (PRD §6)
 };
 
 export const REALM_COOKIE_NAME: Record<Realm, string> = {

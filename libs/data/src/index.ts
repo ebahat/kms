@@ -3,3 +3,7 @@ export * from './errors';
 export * from './scoped-repository';
 export * from './backstop.plugin';
 export * from './system-scope';
+export * from './models/tenant.schema';
+export * from './models/user.schema';
+export * from './repositories/tenants.repository';
+export * from './repositories/users.repository';
