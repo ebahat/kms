@@ -5,3 +5,4 @@ export * from './tos';
 export * from './public';
 export * from './mfa';
 export * from './auth-dto';
+export * from './user-admin-dto';

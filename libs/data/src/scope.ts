@@ -35,3 +35,8 @@ export function scopeFromIds(data: {
     ownerUserId: data.ownerUserId ? new Types.ObjectId(data.ownerUserId) : undefined,
   };
 }
+
+/** Route-param -> ObjectId conversion, kept here for the same reason as scopeFromIds — only libs/data may import mongoose. */
+export function toObjectId(id: string): Types.ObjectId {
+  return new Types.ObjectId(id);
+}
