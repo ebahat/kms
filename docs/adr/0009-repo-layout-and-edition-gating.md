@@ -97,7 +97,7 @@ test/cross-tenant/**    @owner   # the gate itself must not be weakened silently
 
 ### CI mapping (test plan §2 / audit plan §2 land here)
 
-Turborepo pipeline: `lint → build → unit → integration → cross-tenant suite → security scans`; eval canary job triggers on changes under `apps/api/src/chat/**`, `libs/ai-providers/**`, `apps/worker/src/chunk/**`, or `test/evals/**` (test plan §4.8). Worker image is built once; the three pools deploy the same image with different `WORKER_POOL` env and different service accounts/subnets (ADR-0007) — the sandbox distinction is infrastructure, not build flavor.
+Turborepo pipeline: `lint → build → unit → integration → cross-tenant suite → security scans → schema-change gate`; eval canary job triggers on changes under `apps/api/src/chat/**`, `libs/ai-providers/**`, `apps/worker/src/chunk/**`, or `test/evals/**` (test plan §4.8). Worker image is built once; the three pools deploy the same image with different `WORKER_POOL` env and different service accounts/subnets (ADR-0007) — the sandbox distinction is infrastructure, not build flavor. The schema-change gate (ADR-0010) fails a PR that edits `libs/data/src/models/**` without an accompanying migration or an explicit no-migration-needed annotation.
 
 ## Consequences
 

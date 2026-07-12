@@ -220,7 +220,7 @@ Deterministic integration tests, not evals: token budgets decrement correctly; c
 
 ## 8. Upgrade & maintenance process
 
-Every upgrade class below names its **blocking gate** — the suite(s) that must pass before it ships. The common rule: anything that can change retrieval or answer behavior runs the full eval suite (§4.8), not just the canary. Audit-side obligations (config reviews, patching evidence) live in `docs/security_audit_plan_v01.md`.
+Every upgrade class below names its **blocking gate** — the suite(s) that must pass before it ships. The common rule: anything that can change retrieval or answer behavior runs the full eval suite (§4.8), not just the canary. Audit-side obligations (config reviews, patching evidence) live in `docs/security_audit_plan_v01.md`. The embedding-model-swap row below is the worked example ADR-0010 (schema migrations & data backfills) generalizes into its expand→backfill→contract pattern and tenant-batched `SystemScope.run` execution rules.
 
 ### 8.1 AI-surface upgrades
 

@@ -1,6 +1,6 @@
 # Plan: ADR-0010 — Schema Migrations & Data Backfills
 
-**Status:** PLANNED (not started) · **Origin:** design review 2026-07-10, finding 9 (`docs/architecture/design-review-2026-07-10.md`)
+**Status:** DONE — see [ADR-0010](../adr/0010-schema-migrations-and-backfills.md) (Accepted 2026-07-12) · **Origin:** design review 2026-07-10, finding 9 (`docs/architecture/design-review-2026-07-10.md`)
 **Deadline anchor:** must be **Accepted before the first production deploy** — retrofitting a migration discipline onto live tenant data is the failure mode this ADR exists to prevent.
 **Effort estimate:** one focused session — a short ADR (the option space is small) + a walkthrough of one worked example.
 
@@ -20,11 +20,11 @@ MongoDB's schemalessness means nothing *forces* a migration story — which is e
 
 ## Steps
 
-- [ ] 1. Spike: `migrate-mongo` vs custom Nest command against a scratch Atlas cluster (½ the session).
-- [ ] 2. Write ADR-0010 in `docs/adr/` using `docs/adr/template.md` (options table, decision, consequences).
-- [ ] 3. Include one worked example end-to-end (e.g., "add `folders.color` with default" AND the re-embed migration sketch) — the examples are the spec for implementers.
-- [ ] 4. Cross-reference updates: ADR-0008 (gate follow-ups point to ADR-0010 for swap mechanics), test plan §8.1 (upgrade gates cite the migration pattern), ADR-0009 CI mapping (schema-change gate), system-overview ADR index.
-- [ ] 5. Consistency check against ADR-0001 (SystemScope), ADR-0002 (index definitions), ADR-0007 (deploy pipeline); mark Accepted.
+- [SKIPPED] 1. Spike: `migrate-mongo` vs custom Nest command against a scratch Atlas cluster (½ the session). No Atlas cluster exists yet (`infra/` not applied) — the decision was made on documented tool architecture instead (DI/SystemScope access is a property of the tool, not something a live bake-off could overturn; see ADR-0010's Status/Options sections). Live validation of the journal's locking behavior remains a Follow-up.
+- [DONE] 2. Write ADR-0010 in `docs/adr/` using `docs/adr/template.md` (options table, decision, consequences).
+- [DONE] 3. Worked examples: `users.displayName` (simple expand→backfill→contract, using a collection that actually exists in the codebase today rather than the plan's original `folders.color` placeholder — folders don't exist until Phase 2) AND the re-embed migration, which cites test plan §8.1's already-fully-specified shape rather than re-deriving it.
+- [DONE] 4. Cross-reference updates: ADR-0008 already cited test plan §8.1 correctly (no change needed there); test plan §8.1 intro now cites ADR-0010; ADR-0009 CI mapping now lists the schema-change gate; system-overview ADR index moved 0010 from "future candidates" to the Accepted table; design-review-2026-07-10.md finding 9 disposition updated PLANNED → FIXED.
+- [DONE] 5. Consistency check against ADR-0001 (SystemScope signature/import-restriction pattern), ADR-0002 (vector index fields, confirmed no pre-existing `schemaVersion`), ADR-0007 (Cloud Run Job as the natural home, matching the worker-pool job/service distinction) — marked Accepted.
 
 ## Constraints carried in from existing ADRs
 

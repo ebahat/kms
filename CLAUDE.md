@@ -4,7 +4,7 @@ Multi-tenant knowledge management + AI chat over organizational documents for th
 
 ## Project status
 
-Architecture phase complete (ADRs 0001–0009 **Accepted**, 0008 gated on the Hebrew benchmark; design-quality review 2026-07-10 applied — see `docs/architecture/design-review-2026-07-10.md`). **Implementation started 2026-07-11** per `docs/plans/implementation-phases-11-07-2026-plan.md`: Phase 0 (monorepo scaffold, `libs/data` tenant-scoping core, lint guards, CI config, cross-tenant harness skeleton, Terraform skeleton) is complete and verified (`pnpm turbo run build lint test:unit` all green). Phase 1's core spine (Argon2id password hashing, Redis-backed sessions, the CLS-scope-populating auth guard, edition gating) is built and unit-tested; TOTP, login hardening, tenant-admin CRUD, portal-api business logic, the web login UI, and ADR-0010 are still open — see the plan file for the exact checklist.
+Architecture phase complete (ADRs 0001–0010 **Accepted**, 0008 gated on the Hebrew benchmark; design-quality review 2026-07-10 applied — see `docs/architecture/design-review-2026-07-10.md`). **Phase 0 and Phase 1 of `docs/plans/implementation-phases-11-07-2026-plan.md` are both complete** (all items 1.1–1.8 DONE; `pnpm turbo run build lint test:unit` all green across all 10 workspace packages). The full identity/auth spine is real and tested: tenants/users/platformAdmins collections, Argon2id + KMS-envelope-encrypted TOTP + backup codes, breach-list check, password reset, ToS gate, login hardening (progressive delay/lockout/CAPTCHA hook), the two-realm login→TOTP→session handshake (tenant + platform-admin, each with its own guard chain), tenant-admin user CRUD + CSV import, portal-api's tenant lifecycle CRUD + two-person MFA reset, and a working (if unstyled) Next.js UI for all of it including RTL and admin-hostname routing. ADR-0010 (schema migrations) is Accepted but its `migrations/` package is not yet built — that's Phase 2+ work, tracked as a Follow-up in the ADR itself. **Not yet verified against a live backend** — this environment has no MongoDB, so nothing has been exercised against real data; only unit/component-level testing plus one Playwright pass against an unreachable API have happened.
 
 ## Monorepo (pnpm + Turborepo, ADR-0009)
 
@@ -13,7 +13,9 @@ apps/{api,portal-api,worker,web}   libs/{data,auth,permissions,ai-providers,cont
 infra/ (Terraform, not yet applied)   test/{cross-tenant,evals}
 ```
 
-Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm turbo run test:unit`, `pnpm test:cross-tenant`. `apps/worker` selects its pool via `WORKER_POOL=parse|ai|index` env. Guard rules live in `eslint.config.mjs` + `eslint-rules/` (mongoose/`InjectModel` confined to `libs/data`; `SystemScope` import confined to `platform-admin/**`/`jobs/**`) — both are smoke-tested, not just configured. `infra/README.md` lists what a real `terraform apply` needs (GCP project id, billing account, domain).
+Dev ports (no shared default — this bit us once): `apps/api` 3000, `apps/portal-api` 3100, `apps/web` 3010 (`next dev -p 3010` — Next's own default of 3000 collides with `apps/api`).
+
+Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm turbo run test:unit`, `pnpm test:cross-tenant`. `apps/worker` selects its pool via `WORKER_POOL=parse|ai|index` env. `apps/api`/`apps/portal-api` each have a `pnpm run seed` (needs `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`/`PASSWORD_PEPPER`, and `apps/api`'s also needs `SEED_TENANT_NAME`) to create the first account — idempotent on email, requires a live MongoDB. Guard rules live in `eslint.config.mjs` + `eslint-rules/` (mongoose/`InjectModel` confined to `libs/data`; `SystemScope` import confined to `platform-admin/**`/`jobs/**`) — both are smoke-tested, not just configured. `infra/README.md` lists what a real `terraform apply` needs (GCP project id, billing account, domain).
 
 ## Documents (read in this order)
 
@@ -22,7 +24,7 @@ Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm t
 | `docs/requirements_v02.md` | **Authoritative PRD** — two editions (Knowledge Base + standalone Smart OCR), 16 sections. Supersedes `requirements_v01.md` (root, historical). |
 | `docs/requirements_review_v01.md` | Review of v01 + **resolution log of owner decisions** (2026-07-07) — check before reopening any settled decision |
 | `docs/security_requirements_v01.md` | Security spec — threat model, tenant-isolation architecture, LLM/RAG threats, Israeli 2017-regs obligations, MVP acceptance checklist |
-| `docs/adr/` | **Accepted ADRs 0001–0009**: tenant scoping, Atlas data/index design, ingestion pipeline (ClamAV in-VPC), auth/sessions (Redis, separate portal realm), RBAC resolution (cached on-read), GCS storage/signed URLs, GCP Cloud Run topology, Vertex AI providers (gated on Hebrew benchmark), pnpm/Turborepo monorepo + edition gating |
+| `docs/adr/` | **Accepted ADRs 0001–0010**: tenant scoping, Atlas data/index design, ingestion pipeline (ClamAV in-VPC), auth/sessions (Redis, separate portal realm), RBAC resolution (cached on-read), GCS storage/signed URLs, GCP Cloud Run topology, Vertex AI providers (gated on Hebrew benchmark), pnpm/Turborepo monorepo + edition gating, schema migrations & backfills (custom NestJS runner, expand→backfill→contract, roll-forward-only) |
 | `docs/architecture/system-overview.md` | Container + data-flow Mermaid diagrams, sec-§12 traceability table, future-ADR list (FINAL for the ADR pass) |
 | `docs/architecture/design-review-2026-07-10.md` | Design-quality review record — 12 findings + dispositions (1/2/8 fixed in ADRs, 9 planned as ADR-0010, rest recorded with triggers) |
 | `docs/test_plan_v01.md` | Test plan — security tests, LLM eval plan (datasets/thresholds), upgrade & maintenance process |
@@ -41,7 +43,8 @@ Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm t
 
 ## Next steps
 
-1. Continue `docs/plans/implementation-phases-11-07-2026-plan.md` Phase 1: TOTP + KMS envelope encryption, login hardening (lockout/CAPTCHA/timing), tenant-admin CRUD, `portal-api` business logic, `web` login/RTL screens, ADR-0010 (schema migrations, task 1.8)
-2. Provision a real GCP project + billing account so the Terraform skeleton (`infra/`) can actually apply
+1. Start Phase 2 of `docs/plans/implementation-phases-11-07-2026-plan.md`: folders/groups/permissions (ADR-0005), upload path + serving (ADR-0006/0003), recycle bin
+2. Provision a real GCP project + billing account so the Terraform skeleton (`infra/`) can actually apply — this also unblocks validating ADR-0010's migration-runner journal/locking behavior against a live Atlas cluster (deferred, see the ADR's Status section)
 3. Eval-corpus lane E1 (Hebrew golden datasets) can start in parallel — it blocks the ADR-0008 gate inside Phase 4
 4. WTP interviews + real Hebrew-document token measurements before finalizing pricing (business lane, unblocked)
+5. Nothing in Phase 1 has been exercised against a live MongoDB/full stack yet — first real integration/cross-tenant test run should happen as soon as infra exists
