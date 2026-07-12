@@ -1,3 +1,6 @@
-export default function HomePage() {
-  return <main>KMS — scaffold placeholder. Feature screens land in Phase 1 (login) onward.</main>;
+import { redirect } from 'next/navigation';
+
+/** Tenant hostname root — the admin hostname never reaches this file (middleware.ts rewrites it to /admin/home). */
+export default function RootPage() {
+  redirect('/login');
 }

@@ -9,8 +9,11 @@ import {
   SessionService,
   REALM_COOKIE_NAME,
   verifyTotp,
+  encryptField,
   decryptField,
   KmsKeyProvider,
+  generateTotpSecret,
+  totpProvisioningUri,
   decideLoginHardening,
   RateLimiter,
   CaptchaVerifier,
@@ -86,7 +89,25 @@ export class PlatformAuthController {
     });
     setSessionCookie(res, 'platform', sessionId);
 
-    return { mfaRequired: true };
+    return { mfaRequired: true, mfaEnrolled: admin!.mfaEnabled };
+  }
+
+  /** First-login TOTP setup — no backup codes in this realm (ADR-0004: no self-service MFA recovery). */
+  @MfaExempt()
+  @Post('totp/enroll')
+  @HttpCode(200)
+  async enrollTotp() {
+    const scope = this.cls.get<PlatformScope>(PLATFORM_SCOPE_CLS_KEY);
+    if (!scope) throw new UnauthorizedException();
+
+    const admin = await this.admins.findById(scope.adminId);
+    if (!admin) throw new UnauthorizedException();
+
+    const secret = generateTotpSecret();
+    const envelope = await encryptField(secret, this.kms);
+    await this.admins.updateOne(admin._id, { $set: { totpSecretEnvelope: envelope, mfaEnabled: true } });
+
+    return { provisioningUri: totpProvisioningUri(secret, admin.email, 'KMS Admin'), secret };
   }
 
   @MfaExempt()

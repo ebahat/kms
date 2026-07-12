@@ -172,6 +172,24 @@ describe('AuthController (ADR-0004 login handshake)', () => {
     });
   });
 
+  describe('enrollTotp', () => {
+    it('generates a fresh secret + provisioning URI + 10 backup codes, and stores them encrypted/hashed', async () => {
+      const userId = fakeObjectIdHex();
+      cls.set(SCOPE_CLS_KEY, { userId, tenantId: fakeObjectIdHex(), role: 'user', edition: 'kb' });
+      users.findById.mockResolvedValue({ _id: userId, email: 'user@x.com' });
+
+      const result = await controller.enrollTotp();
+
+      expect(result.provisioningUri).toMatch(/^otpauth:\/\/totp\//);
+      expect(result.secret).toEqual(expect.any(String));
+      expect(result.backupCodes).toHaveLength(10);
+      expect(users.updateOne).toHaveBeenCalledWith(
+        { _id: userId },
+        expect.objectContaining({ $set: expect.objectContaining({ mfaEnabled: true }) }),
+      );
+    });
+  });
+
   describe('logout', () => {
     it('revokes the session and clears the cookie', async () => {
       const userId = fakeObjectIdHex();

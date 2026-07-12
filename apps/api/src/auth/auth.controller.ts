@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, HttpCode, Inject, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ClsService } from 'nestjs-cls';
 import {
@@ -19,8 +19,13 @@ import {
   SessionService,
   REALM_COOKIE_NAME,
   verifyTotp,
+  encryptField,
   decryptField,
   KmsKeyProvider,
+  generateTotpSecret,
+  totpProvisioningUri,
+  generateBackupCodes,
+  hashBackupCodes,
   verifyAndFindBackupCode,
   createResetToken,
   isResetTokenValid,
@@ -112,7 +117,35 @@ export class AuthController {
     });
     setSessionCookie(res, 'tenant', sessionId);
 
-    return { mfaRequired: true };
+    return { mfaRequired: true, mfaEnrolled: user!.mfaEnabled };
+  }
+
+  /** First-login TOTP setup (UI spec A3): QR + manual secret + one-time backup codes. Re-enrollable while still unverified. */
+  @MfaExempt()
+  @Post('totp/enroll')
+  @HttpCode(200)
+  async enrollTotp() {
+    const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
+    if (!scope) throw new UnauthorizedException();
+
+    const user = await this.users.findById(scope.userId);
+    if (!user) throw new UnauthorizedException();
+
+    const secret = generateTotpSecret();
+    const envelope = await encryptField(secret, this.kms);
+    const backupCodes = generateBackupCodes();
+    const backupCodeHashes = await hashBackupCodes(backupCodes, this.pepper);
+
+    await this.users.updateOne(
+      { _id: user._id },
+      { $set: { totpSecretEnvelope: envelope, totpBackupCodeHashes: backupCodeHashes, mfaEnabled: true } },
+    );
+
+    return {
+      provisioningUri: totpProvisioningUri(secret, user.email),
+      secret,
+      backupCodes, // shown ONCE — never retrievable again after this response
+    };
   }
 
   @MfaExempt()
@@ -216,6 +249,14 @@ export class AuthController {
     await this.sessions.revokeAll('tenant', user._id.toString()); // all sessions invalidated on reset (sec §2)
 
     return { ok: true };
+  }
+
+  /** Minimal "whoami" — drives edition/role-based navigation client-side (UI spec). Gated normally: fully authenticated only. */
+  @Get('session')
+  async getSession() {
+    const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
+    if (!scope) throw new UnauthorizedException();
+    return { role: scope.role, edition: scope.edition };
   }
 
   @MfaExempt()

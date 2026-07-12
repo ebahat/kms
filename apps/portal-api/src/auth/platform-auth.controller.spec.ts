@@ -124,6 +124,19 @@ describe('PlatformAuthController (ADR-0004 platform-admin login handshake)', () 
     await expect(controller.verifyTotpCode({ code: '000000' }, { cookies: {} } as any, fakeRes())).rejects.toThrow(UnauthorizedException);
   });
 
+  it('enrollTotp generates a secret + provisioning URI with no backup codes in this realm', async () => {
+    const adminId = fakeObjectIdHex();
+    cls.set(PLATFORM_SCOPE_CLS_KEY, { adminId });
+    admins.findById.mockResolvedValue({ _id: adminId, email: 'admin@x.com' });
+
+    const result = await controller.enrollTotp();
+
+    expect(result.provisioningUri).toMatch(/^otpauth:\/\/totp\//);
+    expect(result.secret).toEqual(expect.any(String));
+    expect((result as any).backupCodes).toBeUndefined();
+    expect(admins.updateOne).toHaveBeenCalledWith(adminId, expect.objectContaining({ $set: expect.objectContaining({ mfaEnabled: true }) }));
+  });
+
   it('logout revokes the session and clears the cookie', async () => {
     const adminId = fakeObjectIdHex();
     cls.set(PLATFORM_SCOPE_CLS_KEY, { adminId });
