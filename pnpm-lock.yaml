@@ -367,10 +367,19 @@ importers:
       '@kms/data':
         specifier: workspace:*
         version: link:../data
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.11.1
     devDependencies:
+      '@types/jest':
+        specifier: ^29.5.14
+        version: 29.5.14
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.1
+      ioredis-mock:
+        specifier: ^8.9.0
+        version: 8.13.1(@types/ioredis-mock@8.2.7(ioredis@5.11.1))(ioredis@5.11.1)
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@22.20.1)(ts-node@10.9.2(@types/node@22.20.1)(typescript@5.9.3))

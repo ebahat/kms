@@ -16,8 +16,9 @@ export class FolderGrant {
   @Prop({ required: true, type: Types.ObjectId })
   principalId!: Types.ObjectId;
 
-  @Prop({ required: true, enum: ['read', 'edit'] })
-  access!: 'read' | 'edit';
+  /** manage > edit > read (ADR-0005, amended 2026-07-19 — was two-tier at schema creation). */
+  @Prop({ required: true, enum: ['read', 'edit', 'manage'] })
+  access!: 'read' | 'edit' | 'manage';
 }
 
 /**
