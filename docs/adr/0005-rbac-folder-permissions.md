@@ -9,6 +9,8 @@
 
 Accepted 2026-07-10 — step-6 consistency review passed; review fixes applied (findings record in the plan). Owns the cardinality-bound analysis flagged in the plan's risk register.
 
+**Amended 2026-07-19** (implementation-phase requirements pass, `docs/requirements_v02.md` §7/§8): access tiers extended from two (read/edit) to three (read/edit/manage) — see §Decision below, "Access tiers" — because directory CRUD and direct-sharing requirements needed delete/move/re-permission separated from ordinary content edits. Direct sharing (internal share links + external token-only links) is a related but separate concern, specified in new ADR-0011, which consumes this ADR's resolver as its permission source for internal shares.
+
 ## Context
 
 The permission model itself is settled by PRD §7: read/edit per folder, grantable to users or groups; subfolders inherit unless an explicit set overrides; effective permission = union of direct and group grants; public folders readable tenant-wide; **changes take effect immediately** — retrieval, citation clicks, and downloads re-check at access time, favorites to lost items are hidden. Out-of-permission reads return 404, never 403 (sec §3.2).
@@ -68,9 +70,19 @@ Option A's pure function, cached in Redis keyed by `{tenantId, userId, permVersi
 
 ## Decision
 
+### Access tiers (amended 2026-07-19: three, strictly ordered)
+
+`manage > edit > read`. Originally two tiers (read/edit); split into three once directory CRUD and direct-sharing requirements needed "can delete/move/re-permission" separated from "can add content":
+
+- **read** — browse the folder listing, view/download files.
+- **edit** — read, plus upload new file versions and create new subfolders/files within the folder.
+- **manage** — edit, plus delete/move/rename the folder or its contents, and change its permission grants. Deletion and re-permissioning always require `manage`, never `edit` alone (this is the one place the original two-tier model was ambiguous — `edit` never implies delete).
+
+A principal's tier on a folder is a single value from this ordered set, never a bitmask — "highest wins" (step 3 below) means highest in this ordering.
+
 ### Grant model (collections)
 
-`folders` (ADR-0002) carries `grants: [{principalType: 'user'|'group', principalId, access: 'read'|'edit'}]`, `isPublic: boolean`, and `hasExplicitGrants: boolean`. Groups live in `groups` with member arrays (PRD §7). Grants are edited only via the admin permission endpoints (audited per PRD §12).
+`folders` (ADR-0002) carries `grants: [{principalType: 'user'|'group', principalId, access: 'read'|'edit'|'manage'}]`, `isPublic: boolean`, and `hasExplicitGrants: boolean`. Groups live in `groups` with member arrays (PRD §7); tenant admins manage group membership, but the role set itself (platform admin / tenant admin / tenant user) is fixed — groups are not a custom-role system (PRD §7). Grants are edited only via the admin/manage-tier permission endpoints (audited per PRD §12), and grants are individually added/removed — a file/folder is never reassigned to a different "owning" group (PRD §7).
 
 ### Resolution algorithm (pure function, unit-testable)
 
@@ -78,17 +90,18 @@ Inputs: all tenant folders (`_id, path, grants, hasExplicitGrants, isPublic`), t
 
 1. Sort folders by depth (root first).
 2. Effective grant set of a folder = its own grants if `hasExplicitGrants`, else the effective set of its parent (**override, not merge** — PRD §7 "an explicit permission set on a subfolder overrides inheritance").
-3. User's access to a folder = highest of: `edit` if any principal has edit, `read` if any has read, plus `read` if `isPublic` (PRD §7).
-4. Output: `permittedRead: folderId[]`, `permittedEdit: folderId[]`.
+3. User's access to a folder = highest tier of: any principal's granted tier, plus `read` if `isPublic` (PRD §7). "Highest" is the `manage > edit > read` ordering above.
+4. Output: `permittedRead: folderId[]`, `permittedEdit: folderId[]`, `permittedManage: folderId[]` — each a superset of the tier above it (every `manage` folder is also in `permittedEdit` and `permittedRead`, etc.) so callers can check the tier they need directly.
 
 The union-of-direct-and-group rule (PRD §7) is step 3; the inheritance-with-override rule is step 2. The same function serves the admin UI's "why can Dana see this?" preview (UI spec C3) by returning the deciding grant per folder.
 
 ### Consumption points
 
-- **API authorization:** every document/folder route resolves the target's `folderId` and checks membership in `permittedRead`/`permittedEdit`; misses return **404** (sec §3.2). This is layered *on top of* the ADR-0001 tenant scope, never instead of it.
+- **API authorization:** every document/folder route resolves the target's `folderId` and checks membership in `permittedRead`/`permittedEdit`/`permittedManage` (whichever the operation needs); misses return **404** (sec §3.2). This is layered *on top of* the ADR-0001 tenant scope, never instead of it.
 - **Retrieval pre-filter:** `buildScopedRetrievalQuery` (ADR-0002) receives `permittedRead` as `permittedFolderIds`. **Empty set ⇒ no Atlas call, no LLM call** — fail-closed grounding (sec §5.4).
 - **Signed-URL issuance** (ADR-0006) and **citation click-through** (PRD §10) re-run the check at access time — satisfying sec §3.5's serve-time requirement even for cached chat answers.
 - **Favorites listing** filters by `permittedRead` at read time — lost-access items hidden, not deleted (PRD §7).
+- **Direct sharing (ADR-0011)** consumes `permittedRead`/`permittedEdit`/`permittedManage` unchanged for internal share-link recipients — a share link is never a fourth access path, it only surfaces a resource a recipient can already reach through this same resolver, or (for external recipients) is resolved through ADR-0011's separate token mechanism instead of this one.
 
 ### Data Flow (permission change propagation)
 
@@ -107,4 +120,4 @@ The union-of-direct-and-group rule (PRD §7) is step 3; the inheritance-with-ove
 
 - **Positive:** Authorization is one pure function + one counter — easy to test exhaustively (inheritance/override/public/union matrix in unit tests; propagation in the cross-tenant suite, test plan §3.1); retrieval and API checks consume the same computation, so search can never disagree with the browser (PRD §10 vs §7 consistency).
 - **Negative / accepted risks:** Per-tenant version bump recomputes all that tenant's users lazily — a bulk admin session invalidates repeatedly (accepted: recompute is ≤ 500-folder in-memory work); Redis outage degrades to Option A per-request recomputation (correct, slower) — the service must implement that fallback, not fail.
-- **Follow-ups:** Unit-test matrix for the resolution function (test plan §5); permission-propagation e2e (test plan §3.1); grant-group-token escape hatch noted in system-overview future list; ADR-0006 consumes `permittedRead` for signed-URL issuance.
+- **Follow-ups:** Unit-test matrix for the resolution function (test plan §5), now including the three-tier hierarchy; permission-propagation e2e (test plan §3.1); grant-group-token escape hatch noted in system-overview future list; ADR-0006 consumes `permittedRead` for signed-URL issuance; ADR-0011 (direct sharing links, internal + external) builds on this resolver.

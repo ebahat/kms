@@ -13,3 +13,4 @@ infra/**/*.tfstate
 infra/**/*.tfstate.backup
 infra/**/.terraform.lock.hcl
 .playwright-mcp/
+.omc/

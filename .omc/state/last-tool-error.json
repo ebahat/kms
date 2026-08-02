@@ -1,7 +1,0 @@
-{
-  "tool_name": "Read",
-  "tool_input_preview": "{\"file_path\":\"/Users/ehud/workspace/kms/docs/adr/0002-atlas-search-index-design.md\"}",
-  "error": "File does not exist. Note: your current working directory is /Users/ehud/workspace/kms.",
-  "timestamp": "2026-07-10T10:49:53.152Z",
-  "retry_count": 1
-}

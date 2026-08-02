@@ -63,11 +63,19 @@ A platform-level admin portal, separate from tenant UIs, restricted to platform 
 
 ## 7. Role-Based Access Control (RBAC)
 
-* **Roles:** Platform admin (§5), tenant admin, and tenant user.
-* **Groups:** Tenant admins can create and manage user groups; permissions can be granted to users or groups.
-* **Folder-level permissions:** Read or edit permission per folder, assignable to users or groups.
-* **Inheritance:** Subfolders inherit parent permissions by default; an explicit permission set on a subfolder overrides inheritance. The effective permission for a user is the union of direct and group grants.
-* **Public folders:** Tenant-wide folders readable by all users in the tenant.
+* **Roles:** Platform admin (§5), tenant admin, and tenant user. Tenant admins do not define new custom roles — "role"-like grouping is done via **groups** (below); the role set itself is fixed.
+* **Groups:** Tenant admins can create and manage user groups; permissions can be granted to users or groups. A group's membership can change freely, but a file/folder's **permission grants are individually added or removed** — there is no concept of reassigning a file/folder to a different "owning" group.
+* **Folder-level permission tiers (three, strictly ordered — manage > edit > read):**
+  * **Read:** browse the folder listing, view/download files.
+  * **Edit:** everything read allows, plus upload new file versions and create new subfolders/files within the folder.
+  * **Manage:** everything edit allows, plus delete or move the folder/its contents, rename it, and change its permission grants. Deletion and re-permissioning always require manage, never edit alone.
+* **Directory CRUD:** Any user can create/rename/browse/delete a directory according to the tier they hold on it (create/rename needs edit, delete needs manage); tenant admins can CRUD any directory in their tenant regardless of grants.
+* **Inheritance:** Subfolders inherit parent permissions by default; an explicit permission set on a subfolder overrides inheritance (never merges with it). The effective permission for a user is the union of direct and group grants, at the highest tier granted by any path.
+* **Public folders:** Tenant-wide folders readable (read tier) by all users in the tenant.
+* **Directory structure:** Single-parent tree (Google Drive-style browsing UX — nested folders, breadcrumbs — but each file/folder lives in exactly one location, not multiple simultaneous parents).
+* **Direct sharing links:**
+  * A user with at least read access to a file or folder can generate a direct link to it for another **internal** (same-tenant) user. The recipient's access is still resolved through normal RBAC (folder inheritance + any explicit grant the link creates) — a link never grants more than the sharer already has, and never bypasses tenant scoping.
+  * A file or folder can also be shared with an **external** (non-tenant) recipient via a **token-only link**: no account or login, access solely through an unguessable, expiring, individually revocable signed link, always **read-only**. External access never creates a tenant user record and is excluded from all internal RBAC/group machinery.
 * **Permission changes take effect immediately:** Retrieval, citation links, and downloads re-check permission at access time. Favorites pointing to items the user can no longer access are hidden (not deleted).
 * **Favorites:** Users can mark folders and documents as personal favorites for quick access.
 
@@ -77,10 +85,12 @@ A platform-level admin portal, separate from tenant UIs, restricted to platform 
 * **Folders:** Nested folder hierarchy (maximum depth 10). Folders and documents can be renamed and moved; moving a document re-applies the destination folder's permissions.
 * **Metadata:** Upload date, creator, folder association, file size, version number, and processing status for every document.
 * **Version history:** Uploading a new version creates a new version record; prior versions are retained and count against quota. **Only the latest version is indexed for search/chat** — superseded vectors are purged from the index immediately on new-version ingestion. Users with edit access can view and restore prior versions (restore creates a new latest version).
-* **Document actions:**
+* **Document actions (three-tier RBAC, §7):**
   * Read access → view, download original source files (any retained version).
-  * Edit access → upload new versions, move, rename, delete.
-* **Deletion:** Deleting a document removes it from the search index immediately and moves it to a tenant recycle bin for a configurable retention window (default 30 days), after which the source file, all versions, metadata, and indexed data are permanently purged. Tenant admins can restore from or purge the recycle bin early. All deletions are audited with a content hash.
+  * Edit access → upload new versions.
+  * Manage access → move, rename, delete; change the document's/folder's permission grants.
+* **Direct sharing:** Any file or folder can be shared via a direct link — internally to another tenant user (their access still resolves through normal RBAC, §7) or externally via a read-only, token-based link requiring no account (§7).
+* **Deletion:** Deleting a document removes it from the search index immediately and moves it to a tenant recycle bin for a configurable retention window (default 30 days), after which the source file, all versions, metadata, and indexed data are permanently purged. Deleting a folder recycles it and everything nested beneath it as one unit. Tenant admins can restore from or purge the recycle bin early. All deletions are audited with a content hash.
 * **Ingestion pipeline:** Parsing, chunking, embedding, and indexing run asynchronously with per-document status (queued / processing / indexed / failed) visible to the uploader. Failures surface an actionable error and are retryable.
 
 ## 9. Personal OCR Module

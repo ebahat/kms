@@ -10,3 +10,7 @@ export * from './repositories/users.repository';
 export * from './models/platform-admin.schema';
 export * from './repositories/platform-admins.repository';
 export * from './platform-scope';
+export * from './models/folder.schema';
+export * from './models/group.schema';
+export * from './repositories/folders.repository';
+export * from './repositories/groups.repository';
