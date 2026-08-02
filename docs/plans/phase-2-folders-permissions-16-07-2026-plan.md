@@ -64,7 +64,7 @@ Progress is tracked inline below as items complete; update statuses here as the 
 goes rather than only in the top-level plan file.
 
 - [DONE] 2.1 Folders + groups — `libs/data/src/models/{folder,group}.schema.ts`, `FoldersRepository`/`GroupsRepository` (`libs/data/src/repositories/`), `FolderLimitExceededError`/`FolderDepthExceededError`. `createFolder()` enforces `MAX_FOLDERS_PER_TENANT` (2000, ADR-0005) and `MAX_FOLDER_DEPTH` (10, PRD §8) before insert. 7 new unit tests (26 total in `libs/data`); build/lint/test:unit green.
-- [ ] 2.2 Permission resolution
+- [ ] 2.2 Permission resolution — incl. ADR-0005's widening-detection amendment (`broaderThanParent`/`addedGroups` per folder, cached per `{tenantId, permVersion}`)
 - [ ] 2.3 Documents + upload path
 - [ ] 2.4 Serving (signed URLs)
 - [ ] 2.5 Recycle bin + deletion verification
