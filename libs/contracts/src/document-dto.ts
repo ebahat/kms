@@ -21,6 +21,20 @@ export type DownloadDocumentResponse = {
   expiresAt: Date;
 };
 
+/** PRD §8 — deletion moves a document to the tenant recycle bin, not a live table row. */
+export type DeleteDocumentResponse = {
+  recycleBinEntryId: string;
+};
+
+export type RestoreDocumentResponse = {
+  documentId: string;
+};
+
+/** `verified` mirrors the DeletionVerification record's `passed` field (sec §7.3). */
+export type PurgeRecycleBinEntryResponse = {
+  verified: boolean;
+};
+
 export type DocumentSummary = {
   id: string;
   folderId: string;

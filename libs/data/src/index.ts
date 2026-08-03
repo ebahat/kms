@@ -20,3 +20,7 @@ export * from './repositories/documents.repository';
 export * from './repositories/document-versions.repository';
 export * from './models/audit-event.schema';
 export * from './repositories/audit-events.repository';
+export * from './models/recycle-bin-entry.schema';
+export * from './repositories/recycle-bin-entries.repository';
+export * from './models/deletion-verification.schema';
+export * from './repositories/deletion-verifications.repository';

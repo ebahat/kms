@@ -24,6 +24,12 @@ import {
   AuditEvent,
   AuditEventSchema,
   AuditEventsRepository,
+  RecycleBinEntry,
+  RecycleBinEntrySchema,
+  RecycleBinEntriesRepository,
+  DeletionVerification,
+  DeletionVerificationSchema,
+  DeletionVerificationsRepository,
 } from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
@@ -61,6 +67,8 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: Document.name, schema: DocumentSchema },
       { name: DocumentVersion.name, schema: DocumentVersionSchema },
       { name: AuditEvent.name, schema: AuditEventSchema },
+      { name: RecycleBinEntry.name, schema: RecycleBinEntrySchema },
+      { name: DeletionVerification.name, schema: DeletionVerificationSchema },
     ]),
     // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
@@ -83,6 +91,8 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     DocumentsRepository,
     DocumentVersionsRepository,
     AuditEventsRepository,
+    RecycleBinEntriesRepository,
+    DeletionVerificationsRepository,
     DocumentsPermissionsService,
     AdminOnlyGuard,
     // Order matters: SessionAuthGuard populates the CLS scope (and the mfaVerified/

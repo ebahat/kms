@@ -30,7 +30,12 @@ export class DocumentsPermissionsService {
     return this.hasAccess(folderId, 'read');
   }
 
-  private async hasAccess(folderId: string, tier: 'read' | 'edit'): Promise<boolean> {
+  /** Delete path (Phase 2.5, PRD §7 "delete needs manage, never edit alone"). */
+  canManage(folderId: string): Promise<boolean> {
+    return this.hasAccess(folderId, 'manage');
+  }
+
+  private async hasAccess(folderId: string, tier: 'read' | 'edit' | 'manage'): Promise<boolean> {
     const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
     if (!scope) throw new MissingScopeError('DocumentsPermissionsService');
 
@@ -44,6 +49,8 @@ export class DocumentsPermissionsService {
     const principals = toPrincipalSet(scope.userId.toString(), groupDocs);
 
     const resolution = await resolveFolderPermissionsCached(this.cache, scope.tenantId.toString(), folders, principals);
-    return (tier === 'edit' ? resolution.permittedEdit : resolution.permittedRead).includes(folderId);
+    const permittedSet =
+      tier === 'manage' ? resolution.permittedManage : tier === 'edit' ? resolution.permittedEdit : resolution.permittedRead;
+    return permittedSet.includes(folderId);
   }
 }

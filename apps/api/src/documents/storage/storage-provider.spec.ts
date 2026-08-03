@@ -51,4 +51,25 @@ describe('FakeStorageProvider', () => {
       await expect(storage.getSignedDownloadUrl('nonexistent', { displayFilename: 'x.pdf' })).rejects.toThrow();
     });
   });
+
+  describe('objectExists / deleteObject (Phase 2.5)', () => {
+    it('objectExists is true after putObject and false before it', async () => {
+      const storage = new FakeStorageProvider();
+      expect(await storage.objectExists('k1')).toBe(false);
+      await storage.putObject('k1', Buffer.from('x'), { contentType: 'application/pdf' });
+      expect(await storage.objectExists('k1')).toBe(true);
+    });
+
+    it('deleteObject removes the object, and objectExists reflects that', async () => {
+      const storage = new FakeStorageProvider();
+      await storage.putObject('k1', Buffer.from('x'), { contentType: 'application/pdf' });
+      await storage.deleteObject('k1');
+      expect(await storage.objectExists('k1')).toBe(false);
+    });
+
+    it('deleteObject on a key that was never written is not an error (idempotent, for a retried purge)', async () => {
+      const storage = new FakeStorageProvider();
+      await expect(storage.deleteObject('nonexistent')).resolves.toBeUndefined();
+    });
+  });
 });

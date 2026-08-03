@@ -142,4 +142,36 @@ describe('DocumentsPermissionsService (first real consumer of libs/permissions)'
       expect(await service.canRead(newObjectId().toString())).toBe(false);
     });
   });
+
+  describe('canManage (delete path, Phase 2.5)', () => {
+    it('a regular user with a manage grant can manage', async () => {
+      setScope('user');
+      const folder = makeFolder({ grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canManage(folder._id.toString())).toBe(true);
+    });
+
+    it('a regular user with only an edit grant cannot manage (PRD §7: delete needs manage, never edit alone)', async () => {
+      setScope('user');
+      const folder = makeFolder({ grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canManage(folder._id.toString())).toBe(false);
+    });
+
+    it('a tenant admin can manage any existing folder regardless of grants', async () => {
+      setScope('admin');
+      const folder = makeFolder({ grants: [] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn() };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canManage(folder._id.toString())).toBe(true);
+    });
+  });
 });

@@ -9,10 +9,9 @@ export interface SignedDownloadUrl {
 
 /**
  * Object storage abstraction (ADR-0006). Deliberately minimal — only what
- * the upload path (Phase 2.3) and download path (Phase 2.4) need; deletion
- * (2.5) adds methods here when that phase actually builds it, per the
- * phase-2 plan's YAGNI note (no shared libs/storage package, just this
- * interface, mirroring libs/auth's KmsKeyProvider pattern).
+ * the upload path (Phase 2.3), download path (Phase 2.4), and deletion
+ * path (Phase 2.5) need; no shared libs/storage package, just this
+ * interface, mirroring libs/auth's KmsKeyProvider pattern.
  */
 export interface StorageProvider {
   putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void>;
@@ -23,6 +22,12 @@ export interface StorageProvider {
    * rendered inline, regardless of what it actually is (sec §4.4).
    */
   getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl>;
+
+  /** Deletion-verification input (sec §7.3) — never trust a delete succeeded without checking. */
+  objectExists(key: string): Promise<boolean>;
+
+  /** Idempotent: deleting an already-absent key is not an error (a retried purge must not fail). */
+  deleteObject(key: string): Promise<void>;
 }
 
 /**
@@ -68,6 +73,14 @@ export class FakeStorageProvider implements StorageProvider {
     return { url: `fake://storage/${key}?filename=${encodeURIComponent(opts.displayFilename)}`, expiresAt: new Date(Date.now() + SIGNED_URL_TTL_MS) };
   }
 
+  async objectExists(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    this.objects.delete(key);
+  }
+
   /** Test-only inspection hook — not part of the StorageProvider contract. */
   peek(key: string): { data: Buffer; contentType: string } | undefined {
     return this.objects.get(key);
@@ -101,5 +114,14 @@ export class GcsStorageProvider implements StorageProvider {
       responseDisposition: `attachment; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
     });
     return { url, expiresAt };
+  }
+
+  async objectExists(key: string): Promise<boolean> {
+    const [exists] = await this.bucket.file(key).exists();
+    return exists;
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    await this.bucket.file(key).delete({ ignoreNotFound: true });
   }
 }
