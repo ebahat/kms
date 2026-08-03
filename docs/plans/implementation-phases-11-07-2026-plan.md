@@ -10,8 +10,11 @@
 P0 Foundation ─→ P1 Identity/Tenancy ─→ P2 Folders/Files ─→ P3 Ingestion ─→ P4 Retrieval/Chat ─→ P5 OCR-E/Portal ─→ P6 Hardening/Launch
                       │                                                        ▲
                       └── E1 Hebrew eval corpora (parallel lane) ──────────────┘  (E1 blocks the ADR-0008 gate inside P4)
+                      └── P2A Calendar & Task Management (parallel lane, customer-MVP-driven, generic — no P3/P4 dependency)
 ADR-0010 (schema migrations): written during P1; must be Accepted before the first production deploy.
 ```
+
+**Added 2026-08-04 (brainstorming session — Kibbutz-governance flavor discussion):** a customer wants calendar + task management as an MVP. That feature is generic (attaches to any `group`, not tenant-vertical-specific) and only depends on P1's tenancy/user/group model, so it's scheduled as a new parallel lane (P2A below) rather than blocking on P3/P4. The governance/committee model that prompted the discussion is **deferred, not phased** — see the note after Phase 6 — because its payoff (chat surfacing binding decisions across levels) hard-depends on P3+P4 existing first, and building it now would be speculative. Both calendar/kanban and governance are separately-priced opt-in modules per tenant (alongside LLM/chat itself), which needs a new module-entitlement ADR extending ADR-0009 before either ships — tracked as P2A.0 below.
 
 Each phase ends with: unit/integration tests green, the code-quality pipeline (working rule 4: review → simplify → `snyk_code_scan` → final review), and the cross-tenant suite green.
 
@@ -54,6 +57,20 @@ Each phase ends with: unit/integration tests green, the code-quality pipeline (w
 - [ ] 2.7 Tests: permission-matrix integration suite (inheritance/override/public), 404-not-403 assertions folded into the cross-tenant suite, signed-URL expiry + tamper tests (test plan §3.3–3.4).
 
 **Exit criteria:** a user sees exactly their permitted tree; grant changes take effect within the cache-version rules; deletion produces a verification record; all P2 tests green.
+
+## Phase 2A — Calendar & Task Management *(parallel lane — customer-MVP-driven, generic, no P3/P4 dependency)*
+
+**Status:** NOT STARTED — scoped in the 2026-08-04 brainstorming session; not yet ADR'd. Can start once P1 lands (needs tenancy/users/groups only); does not need P3 (ingestion) or P4 (chat) to exist.
+
+- [ ] 2A.0 New ADRs needed before build: (a) **module-entitlement mechanism** (extends ADR-0009) — `tenant.enabledModules: Set<'governance'|'kanban'|'calendar'|'llm'>` + a `@Module(...)` decorator/`ModuleGuard` parallel to the existing `EditionGuard` (404 on disabled-module routes), since calendar, kanban, governance, and LLM/chat itself are each separately priced per tenant; (b) calendar/event data model + email delivery — pulls the P5.4 "transactional email provider decision" forward rather than deferring it; (c) kanban board data model + concurrent multi-user edit handling.
+- [ ] 2A.1 Calendar: events/meetings/due-dates/special-events scoped to a `group`; per-member email invitations; recurrence/timezone/ICS handling decided in the ADR.
+- [ ] 2A.2 Kanban: boards/columns/cards scoped to a `group`; task assignment; frontend drag-drop library choice deferred to the ADR (not decided in brainstorming — candidates noted: `@dnd-kit`).
+- [ ] 2A.3 UI: calendar view, kanban board view, invitation email templates.
+- [ ] 2A.4 Tests: cross-tenant suite extended for calendar/kanban routes; email-delivery integration tests (fixtures only, no real sends in CI).
+
+**Built generic, not governance-gated:** calendar/kanban attach to any `group` and ship independent of the committee/document-type model below, so the MVP customer isn't blocked on the Kibbutz-specific work.
+
+**Exit criteria:** a group can schedule an event and its members receive an email invitation; a group's kanban board supports create/assign/move/complete; both pass the cross-tenant suite under the new module-entitlement gate.
 
 ## Phase 3 — Ingestion pipeline
 
@@ -109,6 +126,17 @@ Each phase ends with: unit/integration tests green, the code-quality pipeline (w
 **Exit criteria:** every sec §12 item has recorded evidence; pentest scheduled; production stands up from IaC + CI alone.
 
 ---
+
+## Future (deferred, not phased) — Governance/Committee Module
+
+**Status:** Brainstormed 2026-08-04, not yet spec'd or ADR'd, not scheduled into a phase number above. Deferred until a concrete second customer/engagement needs it — do not start before **P4's exit criteria are met**: the feature's actual payoff (chat telling a user what's binding across General-Meeting/Board/sub-committee levels) hard-depends on P3 (chunking/indexing) and P4 (chat/RAG) existing; building the structural pieces earlier would be speculative against an unfinished retrieval stack.
+
+Domain-model sketch from the brainstorm (for whoever writes the eventual spec/ADR):
+
+- `committees` collection: owns one or more folder trees (`treeFolderIds: ObjectId[]`), has a `memberGroupId`. A committee's tree is private by default — reuses ADR-0005's grant/resolver mechanism unchanged (root folder granted only to the committee's group, `isPublic: false`); cross-committee sharing is just adding another group's grant, no new sharing primitive needed. This also guarantees private trees stay invisible to chat/RAG, not just browsing, since ADR-0002's retrieval pre-filter consumes the same `permittedRead` set and fails closed on empty.
+- `documentTypes` collection: tenant-scoped, admin-configurable `{name, bindingLevel: number}`, seeded with a default 5-level Hebrew preset (lower number = higher precedence, binding on all higher-numbered levels): 1. תקנון, 2. פרוטוקול אסיפה, 3. פרוטוקול הנהלה, 4. פרוטוקול ועדה, 5. החלטת מנהל. Documents get an optional `documentTypeId`.
+- Chat integration: denormalize `bindingLevel` onto chunks at index time (same pattern P4 already uses for other document metadata), sort/group citations by level at answer time, feed the structured signal into the answer-construction prompt so it can state what's binding vs. superseded. An explicit NLP-extracted decision graph (per-decision topic tags + `supersedes` links) was considered and rejected for MVP — bigger build, extraction-accuracy risk — and should stay a documented future enhancement, not get built speculatively.
+- Shares the module-entitlement ADR with P2A.0 (governance is one of the same `enabledModules` flags).
 
 ## Standing rules across all phases
 
