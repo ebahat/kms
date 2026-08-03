@@ -21,6 +21,9 @@ import {
   DocumentVersionSchema,
   DocumentsRepository,
   DocumentVersionsRepository,
+  AuditEvent,
+  AuditEventSchema,
+  AuditEventsRepository,
 } from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
@@ -57,6 +60,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: Group.name, schema: GroupSchema },
       { name: Document.name, schema: DocumentSchema },
       { name: DocumentVersion.name, schema: DocumentVersionSchema },
+      { name: AuditEvent.name, schema: AuditEventSchema },
     ]),
     // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
@@ -78,6 +82,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     GroupsRepository,
     DocumentsRepository,
     DocumentVersionsRepository,
+    AuditEventsRepository,
     DocumentsPermissionsService,
     AdminOnlyGuard,
     // Order matters: SessionAuthGuard populates the CLS scope (and the mfaVerified/

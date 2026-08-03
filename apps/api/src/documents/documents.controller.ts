@@ -4,11 +4,13 @@ import {
   Body,
   ConflictException,
   Controller,
+  Get,
   HttpCode,
   Inject,
   NotFoundException,
   Param,
   Post,
+  Query,
   UnsupportedMediaTypeException,
   UploadedFile,
   UseFilters,
@@ -17,8 +19,17 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
-import { Edition, UploadDocumentFormSchema, UploadDocumentResponse } from '@kms/contracts';
-import { DocumentsRepository, DocumentVersionsRepository, TenantsRepository, SCOPE_CLS_KEY, Scope, toObjectId, newObjectId } from '@kms/data';
+import { DownloadDocumentResponse, Edition, UploadDocumentFormSchema, UploadDocumentResponse } from '@kms/contracts';
+import {
+  AuditEventsRepository,
+  DocumentsRepository,
+  DocumentVersionsRepository,
+  TenantsRepository,
+  SCOPE_CLS_KEY,
+  Scope,
+  toObjectId,
+  newObjectId,
+} from '@kms/data';
 import { DocumentsPermissionsService } from './documents-permissions.service';
 import { MulterExceptionFilter } from './multer-exception.filter';
 import { MAX_UPLOAD_BYTES } from './upload-limits';
@@ -47,9 +58,42 @@ export class DocumentsController {
     private readonly documentVersions: DocumentVersionsRepository,
     private readonly tenants: TenantsRepository,
     private readonly permissions: DocumentsPermissionsService,
+    private readonly auditEvents: AuditEventsRepository,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(INGESTION_QUEUE) private readonly ingestionQueue: IngestionQueue,
   ) {}
+
+  /**
+   * Download path (ADR-0006). Order matches the ADR: permission re-checked
+   * at issuance time (never trusts a cached upload-time decision), then the
+   * signed URL is issued, then the download is audited. `versionId` is
+   * optional (defaults to latest) and is verified to actually belong to
+   * this document — a versionId from a different document 404s rather than
+   * serving a mismatched file.
+   */
+  @Get('documents/:id/download')
+  async download(@Param('id') id: string, @Query('versionId') versionId?: string): Promise<DownloadDocumentResponse> {
+    const documentId = toObjectId(id);
+    const existing = await this.documents.findById(documentId);
+    if (!existing) throw new NotFoundException();
+
+    const canRead = await this.permissions.canRead(existing.folderId.toString());
+    if (!canRead) throw new NotFoundException();
+
+    const targetVersionId = versionId ? toObjectId(versionId) : existing.latestVersionId;
+    const version = await this.documentVersions.findById(targetVersionId);
+    if (!version || !version.documentId.equals(documentId)) throw new NotFoundException();
+
+    const signed = await this.storage.getSignedDownloadUrl(version.storageKey, { displayFilename: version.originalFilename });
+
+    await this.auditEvents.record({
+      action: 'document.download',
+      targetId: documentId,
+      metadata: { versionId: version._id.toString(), versionNumber: version.versionNumber },
+    });
+
+    return signed;
+  }
 
   @Post('documents')
   @HttpCode(201)

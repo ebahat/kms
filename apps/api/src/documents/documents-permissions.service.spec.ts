@@ -101,4 +101,45 @@ describe('DocumentsPermissionsService (first real consumer of libs/permissions)'
 
     expect(await service.canUploadTo(folder._id.toString())).toBe(true);
   });
+
+  describe('canRead (download path, Phase 2.4)', () => {
+    it('a regular user with only a read grant can read (unlike canUploadTo)', async () => {
+      setScope('user');
+      const folder = makeFolder({ grants: [{ principalType: 'user', principalId: userId, access: 'read' }] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canRead(folder._id.toString())).toBe(true);
+    });
+
+    it('a regular user with no grant at all cannot read', async () => {
+      setScope('user');
+      const folder = makeFolder({ grants: [] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canRead(folder._id.toString())).toBe(false);
+    });
+
+    it('a tenant admin can read any existing folder regardless of grants', async () => {
+      setScope('admin');
+      const folder = makeFolder({ grants: [] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn() };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canRead(folder._id.toString())).toBe(true);
+    });
+
+    it('returns false for a nonexistent folderId', async () => {
+      setScope('user');
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([]) };
+      const groups = { findForMember: jest.fn() };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.canRead(newObjectId().toString())).toBe(false);
+    });
+  });
 });

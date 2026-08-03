@@ -15,6 +15,12 @@ export type UploadDocumentResponse = {
   status: 'queued';
 };
 
+/** ADR-0006: issued per click, never stored, never embedded in a listing. */
+export type DownloadDocumentResponse = {
+  url: string;
+  expiresAt: Date;
+};
+
 export type DocumentSummary = {
   id: string;
   folderId: string;

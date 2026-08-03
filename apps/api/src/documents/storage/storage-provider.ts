@@ -1,14 +1,37 @@
 import { Storage, Bucket } from '@google-cloud/storage';
 
+export const SIGNED_URL_TTL_MS = 5 * 60_000; // ADR-0006: 5 minutes, issued per click, never stored
+
+export interface SignedDownloadUrl {
+  url: string;
+  expiresAt: Date;
+}
+
 /**
  * Object storage abstraction (ADR-0006). Deliberately minimal — only what
- * the upload path (Phase 2.3) needs; signed-URL issuance (2.4) and deletion
- * (2.5) add methods here when those phases actually build them, per the
+ * the upload path (Phase 2.3) and download path (Phase 2.4) need; deletion
+ * (2.5) adds methods here when that phase actually builds it, per the
  * phase-2 plan's YAGNI note (no shared libs/storage package, just this
  * interface, mirroring libs/auth's KmsKeyProvider pattern).
  */
 export interface StorageProvider {
   putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void>;
+
+  /**
+   * V4 signed URL, single object, 5-minute expiry (ADR-0006). Always forces
+   * an attachment download with a generic content-type — the file is never
+   * rendered inline, regardless of what it actually is (sec §4.4).
+   */
+  getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl>;
+}
+
+/**
+ * RFC 5987 encoding for a non-ASCII-safe Content-Disposition filename*
+ * parameter — the display name is untrusted user input (sec §4.4), so it's
+ * always percent-encoded, never interpolated raw into a header.
+ */
+export function encodeRfc5987Filename(name: string): string {
+  return `UTF-8''${encodeURIComponent(name)}`;
 }
 
 /**
@@ -33,6 +56,18 @@ export class FakeStorageProvider implements StorageProvider {
     this.objects.set(key, { data, contentType: opts.contentType });
   }
 
+  /**
+   * Unlike real GCS (which signs a URL without checking the object exists —
+   * failure surfaces only when the client fetches it), the fake checks
+   * existence at signing time. Deliberate divergence: it turns a
+   * wrong-key bug into an immediate, clear test failure instead of a URL
+   * nobody ever notices was dead.
+   */
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+    if (!this.objects.has(key)) throw new Error(`FakeStorageProvider: no object at key "${key}"`);
+    return { url: `fake://storage/${key}?filename=${encodeURIComponent(opts.displayFilename)}`, expiresAt: new Date(Date.now() + SIGNED_URL_TTL_MS) };
+  }
+
   /** Test-only inspection hook — not part of the StorageProvider contract. */
   peek(key: string): { data: Buffer; contentType: string } | undefined {
     return this.objects.get(key);
@@ -54,5 +89,17 @@ export class GcsStorageProvider implements StorageProvider {
 
   async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
     await this.bucket.file(key).save(data, { contentType: opts.contentType, resumable: false });
+  }
+
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+    const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
+    const [url] = await this.bucket.file(key).getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: expiresAt,
+      responseType: 'application/octet-stream',
+      responseDisposition: `attachment; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
+    });
+    return { url, expiresAt };
   }
 }

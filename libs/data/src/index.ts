@@ -18,3 +18,5 @@ export * from './models/document.schema';
 export * from './models/document-version.schema';
 export * from './repositories/documents.repository';
 export * from './repositories/document-versions.repository';
+export * from './models/audit-event.schema';
+export * from './repositories/audit-events.repository';

@@ -18,6 +18,7 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
   let documentVersions: any;
   let tenants: any;
   let permissions: any;
+  let auditEvents: any;
   let storage: any;
   let ingestionQueue: any;
   let controller: DocumentsController;
@@ -33,12 +34,17 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       createVersion: jest.fn().mockImplementation((doc) => Promise.resolve({ _id: doc.id ?? newObjectId() })),
       sumSizeForTenant: jest.fn().mockResolvedValue(0),
       latestVersionNumber: jest.fn().mockResolvedValue(1),
+      findById: jest.fn(),
     };
     tenants = { findById: jest.fn().mockResolvedValue({ storageQuotaBytes: 1_073_741_824 }) };
-    permissions = { canUploadTo: jest.fn().mockResolvedValue(true) };
-    storage = { putObject: jest.fn().mockResolvedValue(undefined) };
+    permissions = { canUploadTo: jest.fn().mockResolvedValue(true), canRead: jest.fn().mockResolvedValue(true) };
+    auditEvents = { record: jest.fn().mockResolvedValue(undefined) };
+    storage = {
+      putObject: jest.fn().mockResolvedValue(undefined),
+      getSignedDownloadUrl: jest.fn().mockResolvedValue({ url: 'https://signed.example/x', expiresAt: new Date('2026-01-01T00:05:00Z') }),
+    };
     ingestionQueue = { enqueueScan: jest.fn() };
-    controller = new DocumentsController(cls, documents, documentVersions, tenants, permissions, storage, ingestionQueue);
+    controller = new DocumentsController(cls, documents, documentVersions, tenants, permissions, auditEvents, storage, ingestionQueue);
   });
 
   describe('upload (new document)', () => {
@@ -98,6 +104,67 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       expect(documentVersions.createVersion).toHaveBeenCalledWith(expect.objectContaining({ versionNumber: 3, documentId }));
       expect(documents.setLatestVersion).toHaveBeenCalledWith(documentId, expect.anything());
       expect(result.versionNumber).toBe(3);
+    });
+  });
+
+  describe('download (ADR-0006)', () => {
+    const documentId = newObjectId();
+    const versionId = newObjectId();
+
+    beforeEach(() => {
+      documents.findById.mockResolvedValue({ _id: documentId, folderId, latestVersionId: versionId });
+      documentVersions.findById.mockResolvedValue({
+        _id: versionId,
+        documentId,
+        versionNumber: 2,
+        storageKey: 'tenants/x/versions/y',
+        originalFilename: 'report.pdf',
+      });
+    });
+
+    it('returns the signed URL for the latest version when no versionId is given', async () => {
+      const result = await controller.download(documentId.toString());
+
+      expect(permissions.canRead).toHaveBeenCalledWith(folderId.toString());
+      expect(storage.getSignedDownloadUrl).toHaveBeenCalledWith('tenants/x/versions/y', { displayFilename: 'report.pdf' });
+      expect(result).toEqual({ url: 'https://signed.example/x', expiresAt: new Date('2026-01-01T00:05:00Z') });
+    });
+
+    it('records an audit event with the document and version identifiers', async () => {
+      await controller.download(documentId.toString());
+
+      expect(auditEvents.record).toHaveBeenCalledWith({
+        action: 'document.download',
+        targetId: documentId,
+        metadata: { versionId: versionId.toString(), versionNumber: 2 },
+      });
+    });
+
+    it('returns 404 for a document that does not exist in this tenant', async () => {
+      documents.findById.mockResolvedValue(null);
+      await expect(controller.download(newObjectId().toString())).rejects.toThrow(NotFoundException);
+    });
+
+    it('re-checks permission at issuance time — returns 404 (never 403) when denied, before touching storage', async () => {
+      permissions.canRead.mockResolvedValue(false);
+      await expect(controller.download(documentId.toString())).rejects.toThrow(NotFoundException);
+      expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a versionId that does not belong to this document, rather than serving a mismatched file', async () => {
+      const otherDocumentVersionId = newObjectId();
+      documentVersions.findById.mockResolvedValue({
+        _id: otherDocumentVersionId,
+        documentId: newObjectId(), // a real ObjectId for a different document — its native .equals() correctly returns false
+      });
+
+      await expect(controller.download(documentId.toString(), otherDocumentVersionId.toString())).rejects.toThrow(NotFoundException);
+      expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a versionId that does not exist at all', async () => {
+      documentVersions.findById.mockResolvedValue(null);
+      await expect(controller.download(documentId.toString(), newObjectId().toString())).rejects.toThrow(NotFoundException);
     });
   });
 });
