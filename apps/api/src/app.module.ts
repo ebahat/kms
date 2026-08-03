@@ -2,10 +2,32 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ClsModule } from 'nestjs-cls';
-import { Tenant, TenantSchema, User, UserSchema, TenantsRepository, UsersRepository } from '@kms/data';
+import {
+  Tenant,
+  TenantSchema,
+  User,
+  UserSchema,
+  TenantsRepository,
+  UsersRepository,
+  Folder,
+  FolderSchema,
+  Group,
+  GroupSchema,
+  FoldersRepository,
+  GroupsRepository,
+  Document,
+  DocumentSchema,
+  DocumentVersion,
+  DocumentVersionSchema,
+  DocumentsRepository,
+  DocumentVersionsRepository,
+} from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
 import { TenantUsersAdminController } from './tenant-admin/tenant-users-admin.controller';
+import { DocumentsController } from './documents/documents.controller';
+import { DocumentsPermissionsService } from './documents/documents-permissions.service';
+import { storageProviderProvider, ingestionQueueProvider } from './documents/documents.providers';
 import { SessionAuthGuard } from './auth/session-auth.guard';
 import {
   passwordPepperProvider,
@@ -18,7 +40,7 @@ import { MfaGateGuard } from './common/mfa-gate.guard';
 import { TosGateGuard } from './common/tos-gate.guard';
 import { EditionGuard } from './common/edition.guard';
 import { AdminOnlyGuard } from './common/admin-only.guard';
-import { redisAppProvider, sessionServiceProvider } from './redis.provider';
+import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } from './redis.provider';
 
 @Module({
   imports: [
@@ -31,13 +53,20 @@ import { redisAppProvider, sessionServiceProvider } from './redis.provider';
     MongooseModule.forFeature([
       { name: Tenant.name, schema: TenantSchema },
       { name: User.name, schema: UserSchema },
+      { name: Folder.name, schema: FolderSchema },
+      { name: Group.name, schema: GroupSchema },
+      { name: Document.name, schema: DocumentSchema },
+      { name: DocumentVersion.name, schema: DocumentVersionSchema },
     ]),
-    // Feature modules (folders, chat, ...) register here starting Phase 2.
+    // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
-  controllers: [HealthController, AuthController, TenantUsersAdminController],
+  controllers: [HealthController, AuthController, TenantUsersAdminController, DocumentsController],
   providers: [
     redisAppProvider,
     sessionServiceProvider,
+    permissionCacheProvider,
+    storageProviderProvider,
+    ingestionQueueProvider,
     passwordPepperProvider,
     kmsKeyProviderProvider,
     rateLimiterProvider,
@@ -45,6 +74,11 @@ import { redisAppProvider, sessionServiceProvider } from './redis.provider';
     securityAlertSinkProvider,
     TenantsRepository,
     UsersRepository,
+    FoldersRepository,
+    GroupsRepository,
+    DocumentsRepository,
+    DocumentVersionsRepository,
+    DocumentsPermissionsService,
     AdminOnlyGuard,
     // Order matters: SessionAuthGuard populates the CLS scope (and the mfaVerified/
     // tosVersion flags); MfaGateGuard blocks the interim pre-TOTP session from

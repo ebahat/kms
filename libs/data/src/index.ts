@@ -14,3 +14,7 @@ export * from './models/folder.schema';
 export * from './models/group.schema';
 export * from './repositories/folders.repository';
 export * from './repositories/groups.repository';
+export * from './models/document.schema';
+export * from './models/document-version.schema';
+export * from './repositories/documents.repository';
+export * from './repositories/document-versions.repository';

@@ -40,3 +40,8 @@ export function scopeFromIds(data: {
 export function toObjectId(id: string): Types.ObjectId {
   return new Types.ObjectId(id);
 }
+
+/** Generates a fresh ObjectId — for callers that must know an id before the Mongo write happens (e.g. building a storage key first). Same import-boundary reason as toObjectId. */
+export function newObjectId(): Types.ObjectId {
+  return new Types.ObjectId();
+}

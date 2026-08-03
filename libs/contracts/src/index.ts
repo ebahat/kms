@@ -7,3 +7,4 @@ export * from './mfa';
 export * from './auth-dto';
 export * from './user-admin-dto';
 export * from './tenant-admin-dto';
+export * from './document-dto';
