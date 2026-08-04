@@ -178,6 +178,7 @@ flowchart LR
 | [0008 — LLM/embedding providers + Hebrew benchmark gate](../adr/0008-llm-embedding-providers.md) | Accepted (gated on Hebrew benchmark) |
 | [0009 — Repo layout & edition gating](../adr/0009-repo-layout-and-edition-gating.md) | Accepted |
 | [0010 — Schema migrations & data backfills](../adr/0010-schema-migrations-and-backfills.md) | Accepted (written without a live-cluster tooling spike — see its Status section) |
+| [0012 — Module entitlement mechanism](../adr/0012-module-entitlement.md) | Accepted |
 
 Future-ADR candidates (recorded, not opened; triggers in the [design-review record](design-review-2026-07-10.md) where noted):
 
