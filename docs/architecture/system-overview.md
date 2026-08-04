@@ -179,10 +179,10 @@ flowchart LR
 | [0009 — Repo layout & edition gating](../adr/0009-repo-layout-and-edition-gating.md) | Accepted |
 | [0010 — Schema migrations & data backfills](../adr/0010-schema-migrations-and-backfills.md) | Accepted (written without a live-cluster tooling spike — see its Status section) |
 | [0012 — Module entitlement mechanism](../adr/0012-module-entitlement.md) | Accepted |
+| [0013 — Transactional email provider selection](../adr/0013-email-provider.md) | Accepted |
 
 Future-ADR candidates (recorded, not opened; triggers in the [design-review record](design-review-2026-07-10.md) where noted):
 
-- Transactional email provider selection (design review finding 11) — needed before implementing password reset / OCR-completion emails; small decision, EU processing + DPA check.
 - Worker-pool consolidation: merge the index pool into the ai pool (design review finding 3) — revisit when writing the first Terraform worker modules.
 - Direct-to-GCS resumable uploads if API-streamed upload throughput becomes a measured bottleneck (ADR-0006; design review finding 12 flags the threshold for validation with real traffic).
 - Grant-group tokens on chunks if folder counts exceed the ADR-0005 cardinality bound (~2,000 folders/tenant).
