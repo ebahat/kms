@@ -48,6 +48,7 @@ import {
 import { MfaGateGuard } from './common/mfa-gate.guard';
 import { TosGateGuard } from './common/tos-gate.guard';
 import { EditionGuard } from './common/edition.guard';
+import { ModuleGuard } from './common/module.guard';
 import { AdminOnlyGuard } from './common/admin-only.guard';
 import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } from './redis.provider';
 
@@ -98,11 +99,13 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     // Order matters: SessionAuthGuard populates the CLS scope (and the mfaVerified/
     // tosVersion flags); MfaGateGuard blocks the interim pre-TOTP session from
     // reaching anything but /auth/totp + logout; TosGateGuard routes a stale-ToS
-    // user to re-acceptance; EditionGuard 404s a mismatched-edition route last.
+    // user to re-acceptance; EditionGuard 404s a mismatched-edition route; ModuleGuard
+    // 404s a route whose opt-in module isn't in the tenant's featureToggles last.
     { provide: APP_GUARD, useClass: SessionAuthGuard },
     { provide: APP_GUARD, useClass: MfaGateGuard },
     { provide: APP_GUARD, useClass: TosGateGuard },
     { provide: APP_GUARD, useClass: EditionGuard },
+    { provide: APP_GUARD, useClass: ModuleGuard },
   ],
 })
 export class AppModule {}

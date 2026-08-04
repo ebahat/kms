@@ -22,7 +22,7 @@ describe('GroupsRepository', () => {
 
   beforeEach(() => {
     cls = new FakeCls();
-    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'admin', edition: 'kb' };
+    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'admin', edition: 'kb', featureToggles: [] };
     cls.set(SCOPE_CLS_KEY, scope);
   });
 

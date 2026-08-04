@@ -47,6 +47,7 @@ export class SessionAuthGuard implements CanActivate {
       tenantId: record.tenantId,
       role: record.role,
       edition: record.edition ?? 'kb',
+      featureToggles: record.featureToggles ?? [],
     });
     this.cls.set(SCOPE_CLS_KEY, scope);
     this.cls.set(TOS_VERSION_CLS_KEY, record.tosVersion);

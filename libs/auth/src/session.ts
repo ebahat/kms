@@ -5,6 +5,7 @@ export type SessionRecord = {
   tenantId?: string; // absent for platform realm
   role: 'user' | 'admin';
   edition?: 'kb' | 'ocr'; // absent for platform realm
+  featureToggles?: string[];
   createdAt: string; // ISO — absolute-lifetime clock
   lastSeenAt: string; // ISO — idle clock
   mfaVerified: boolean;

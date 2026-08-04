@@ -63,7 +63,7 @@ describe('UsersRepository.findByEmailForAuth (pre-auth cross-tenant lookup)', ()
     expect(() => (repo as any).scope()).toThrow();
 
     const tenantId = new Types.ObjectId();
-    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'admin', edition: 'kb' };
+    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'admin', edition: 'kb', featureToggles: [] };
     cls.set(SCOPE_CLS_KEY, scope);
     repo.find({});
     expect(model.find).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));

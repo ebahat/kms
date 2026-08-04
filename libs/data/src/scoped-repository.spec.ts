@@ -46,7 +46,7 @@ describe('ScopedRepository (ADR-0001 — the crown jewels)', () => {
 
   it('injects tenantId from CLS scope into find()', () => {
     const tenantId = new Types.ObjectId();
-    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'user', edition: 'kb' };
+    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'user', edition: 'kb', featureToggles: [] };
     cls.set(SCOPE_CLS_KEY, scope);
 
     const repo = new TestRepository(fakeModel as any, cls as any);

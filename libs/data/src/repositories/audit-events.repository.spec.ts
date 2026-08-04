@@ -28,7 +28,7 @@ describe('AuditEventsRepository (append-only, ADR-0002 sec §8.1)', () => {
 
   beforeEach(() => {
     cls = new FakeCls();
-    const scope: Scope = { tenantId, userId, role: 'user', edition: 'kb' };
+    const scope: Scope = { tenantId, userId, role: 'user', edition: 'kb', featureToggles: [] };
     cls.set(SCOPE_CLS_KEY, scope);
   });
 

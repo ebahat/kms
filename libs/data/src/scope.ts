@@ -10,6 +10,7 @@ export type Scope = {
   userId: Types.ObjectId;
   role: 'user' | 'admin';
   edition: 'kb' | 'ocr';
+  featureToggles: string[];
   ownerUserId?: Types.ObjectId;
 };
 
@@ -25,6 +26,7 @@ export function scopeFromIds(data: {
   tenantId: string;
   role: Scope['role'];
   edition: Scope['edition'];
+  featureToggles?: string[];
   ownerUserId?: string;
 }): Scope {
   return {
@@ -32,6 +34,7 @@ export function scopeFromIds(data: {
     tenantId: new Types.ObjectId(data.tenantId),
     role: data.role,
     edition: data.edition,
+    featureToggles: data.featureToggles ?? [],
     ownerUserId: data.ownerUserId ? new Types.ObjectId(data.ownerUserId) : undefined,
   };
 }

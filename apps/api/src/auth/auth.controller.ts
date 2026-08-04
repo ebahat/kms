@@ -104,7 +104,8 @@ export class AuthController {
 
     const tenant = await this.tenants.findById(user!.tenantId);
     const edition = tenant?.edition ?? 'kb';
-    this.setUserScope(user!._id, user!.tenantId, user!.role, edition);
+    const featureToggles = tenant?.featureToggles ?? [];
+    this.setUserScope(user!._id, user!.tenantId, user!.role, edition, featureToggles);
     await this.users.updateOne({ _id: user!._id }, { $set: { lastLoginAt: new Date() } });
 
     const sessionId = await this.sessions.create('tenant', {
@@ -112,6 +113,7 @@ export class AuthController {
       tenantId: user!.tenantId.toString(),
       role: user!.role,
       edition,
+      featureToggles,
       mfaVerified: false,
       tosVersion: user!.tosAcceptedVersion,
     });
@@ -271,10 +273,16 @@ export class AuthController {
     return { ok: true };
   }
 
-  private setUserScope(userId: { toString(): string }, tenantId: { toString(): string }, role: Scope['role'], edition: Scope['edition'] = 'kb') {
+  private setUserScope(
+    userId: { toString(): string },
+    tenantId: { toString(): string },
+    role: Scope['role'],
+    edition: Scope['edition'] = 'kb',
+    featureToggles: string[] = [],
+  ) {
     this.cls.set(
       SCOPE_CLS_KEY,
-      scopeFromIds({ userId: userId.toString(), tenantId: tenantId.toString(), role, edition }),
+      scopeFromIds({ userId: userId.toString(), tenantId: tenantId.toString(), role, edition, featureToggles }),
     );
   }
 }

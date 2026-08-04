@@ -31,7 +31,7 @@ describe('DocumentVersionsRepository', () => {
 
   beforeEach(() => {
     cls = new FakeCls();
-    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'user', edition: 'kb' };
+    const scope: Scope = { tenantId, userId: new Types.ObjectId(), role: 'user', edition: 'kb', featureToggles: [] };
     cls.set(SCOPE_CLS_KEY, scope);
   });
 
