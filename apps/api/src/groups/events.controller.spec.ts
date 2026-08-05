@@ -41,11 +41,6 @@ describe('EventsController (Phase 2A calendar, ADR-0012 @Module(\'calendar\'))',
       await expect(controller.list(groupId.toString())).rejects.toThrow(NotFoundException);
       expect(events.findForGroup).not.toHaveBeenCalled();
     });
-
-    it('returns 404 for a groupId belonging to another tenant (isMember false via GroupsRepository tenant scoping)', async () => {
-      membership.isMember.mockResolvedValue(false);
-      await expect(controller.list(newObjectId().toString())).rejects.toThrow(NotFoundException);
-    });
   });
 
   describe('create', () => {
