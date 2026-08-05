@@ -24,3 +24,5 @@ export * from './models/recycle-bin-entry.schema';
 export * from './repositories/recycle-bin-entries.repository';
 export * from './models/deletion-verification.schema';
 export * from './repositories/deletion-verifications.repository';
+export * from './models/event.schema';
+export * from './repositories/events.repository';
