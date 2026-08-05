@@ -30,12 +30,18 @@ import {
   DeletionVerification,
   DeletionVerificationSchema,
   DeletionVerificationsRepository,
+  Event,
+  EventSchema,
+  EventsRepository,
 } from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
 import { TenantUsersAdminController } from './tenant-admin/tenant-users-admin.controller';
 import { DocumentsController } from './documents/documents.controller';
 import { DocumentsPermissionsService } from './documents/documents-permissions.service';
+import { EventsController } from './groups/events.controller';
+import { GroupsMembershipService } from './groups/groups-membership.service';
+import { NotificationDispatchService } from './notifications/notification-dispatch.service';
 import { storageProviderProvider, ingestionQueueProvider } from './documents/documents.providers';
 import { SessionAuthGuard } from './auth/session-auth.guard';
 import {
@@ -70,10 +76,11 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: AuditEvent.name, schema: AuditEventSchema },
       { name: RecycleBinEntry.name, schema: RecycleBinEntrySchema },
       { name: DeletionVerification.name, schema: DeletionVerificationSchema },
+      { name: Event.name, schema: EventSchema },
     ]),
     // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
-  controllers: [HealthController, AuthController, TenantUsersAdminController, DocumentsController],
+  controllers: [HealthController, AuthController, TenantUsersAdminController, DocumentsController, EventsController],
   providers: [
     redisAppProvider,
     sessionServiceProvider,
@@ -95,6 +102,9 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     RecycleBinEntriesRepository,
     DeletionVerificationsRepository,
     DocumentsPermissionsService,
+    EventsRepository,
+    GroupsMembershipService,
+    NotificationDispatchService,
     AdminOnlyGuard,
     // Order matters: SessionAuthGuard populates the CLS scope (and the mfaVerified/
     // tosVersion flags); MfaGateGuard blocks the interim pre-TOTP session from
