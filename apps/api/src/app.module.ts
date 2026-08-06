@@ -33,6 +33,9 @@ import {
   Event,
   EventSchema,
   EventsRepository,
+  Task,
+  TaskSchema,
+  TasksRepository,
 } from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
@@ -40,6 +43,8 @@ import { TenantUsersAdminController } from './tenant-admin/tenant-users-admin.co
 import { DocumentsController } from './documents/documents.controller';
 import { DocumentsPermissionsService } from './documents/documents-permissions.service';
 import { EventsController } from './groups/events.controller';
+import { TasksController } from './groups/tasks.controller';
+import { CalendarController } from './groups/calendar.controller';
 import { GroupsMembershipService } from './groups/groups-membership.service';
 import { NotificationDispatchService } from './notifications/notification-dispatch.service';
 import { storageProviderProvider, ingestionQueueProvider } from './documents/documents.providers';
@@ -77,10 +82,19 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: RecycleBinEntry.name, schema: RecycleBinEntrySchema },
       { name: DeletionVerification.name, schema: DeletionVerificationSchema },
       { name: Event.name, schema: EventSchema },
+      { name: Task.name, schema: TaskSchema },
     ]),
     // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
-  controllers: [HealthController, AuthController, TenantUsersAdminController, DocumentsController, EventsController],
+  controllers: [
+    HealthController,
+    AuthController,
+    TenantUsersAdminController,
+    DocumentsController,
+    EventsController,
+    TasksController,
+    CalendarController,
+  ],
   providers: [
     redisAppProvider,
     sessionServiceProvider,
@@ -103,6 +117,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     DeletionVerificationsRepository,
     DocumentsPermissionsService,
     EventsRepository,
+    TasksRepository,
     GroupsMembershipService,
     NotificationDispatchService,
     AdminOnlyGuard,
