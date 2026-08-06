@@ -26,3 +26,5 @@ export * from './models/deletion-verification.schema';
 export * from './repositories/deletion-verifications.repository';
 export * from './models/event.schema';
 export * from './repositories/events.repository';
+export * from './models/task.schema';
+export * from './repositories/tasks.repository';
