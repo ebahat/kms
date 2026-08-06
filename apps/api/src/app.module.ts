@@ -48,6 +48,7 @@ import { CalendarController } from './groups/calendar.controller';
 import { GroupsMembershipService } from './groups/groups-membership.service';
 import { NotificationDispatchService } from './notifications/notification-dispatch.service';
 import { storageProviderProvider, ingestionQueueProvider } from './documents/documents.providers';
+import { notificationProviderProvider } from './notifications/notifications.providers';
 import { SessionAuthGuard } from './auth/session-auth.guard';
 import {
   passwordPepperProvider,
@@ -101,6 +102,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     permissionCacheProvider,
     storageProviderProvider,
     ingestionQueueProvider,
+    notificationProviderProvider,
     passwordPepperProvider,
     kmsKeyProviderProvider,
     rateLimiterProvider,
