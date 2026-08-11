@@ -47,7 +47,10 @@ jobs:
   integration:
     needs: unit
     runs-on: ubuntu-latest
-    # Real service containers (Mongo/Redis) land with the first repository in Phase 1.
+    # No service containers needed: apps/api's integration suite runs a real
+    # NestJS app + real Mongoose queries against mongodb-memory-server
+    # (real in-process mongod, no Docker) with ioredis-mock standing in for
+    # redis-app (Task 9, phase-2a-calendar-kanban plan).
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
