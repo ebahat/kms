@@ -25,7 +25,12 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
     };
     membership = { isMember: jest.fn().mockResolvedValue(true) };
     auditEvents = { record: jest.fn().mockResolvedValue(undefined) };
-    notifications = { notifyTaskAssigned: jest.fn().mockResolvedValue(undefined) };
+    notifications = {
+      notifyTaskAssigned: jest.fn().mockResolvedValue(undefined),
+      notifyTaskAdded: jest.fn().mockResolvedValue(undefined),
+      notifyTaskDeleted: jest.fn().mockResolvedValue(undefined),
+      notifyTaskStatusChanged: jest.fn().mockResolvedValue(undefined),
+    };
     controller = new TasksController(cls, tasks, membership, auditEvents, notifications);
   });
 
@@ -70,6 +75,11 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
       expect(notifications.notifyTaskAssigned).not.toHaveBeenCalled();
     });
 
+    it('sends the preference-gated taskAdded notification regardless of assignee', async () => {
+      const result = await controller.create(groupId.toString(), body);
+      expect(notifications.notifyTaskAdded).toHaveBeenCalledWith(result);
+    });
+
     it('returns 404 (never 403) for a non-member and never creates the task', async () => {
       membership.isMember.mockResolvedValue(false);
       await expect(controller.create(groupId.toString(), body)).rejects.toThrow(NotFoundException);
@@ -84,7 +94,7 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
       tasks.findById.mockResolvedValue({ _id: taskId, groupId, column: 'todo' });
     });
 
-    it('moves a task to a new column, records a statusChanged audit event, and sends no notification', async () => {
+    it('moves a task to a new column, records a statusChanged audit event, sends the statusChanged notification, and sends no assignment notification', async () => {
       await controller.update(groupId.toString(), taskId.toString(), { column: 'in_progress' });
 
       expect(tasks.updateOne).toHaveBeenCalledWith({ _id: taskId }, { $set: { column: 'in_progress' } });
@@ -93,6 +103,7 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
         targetId: taskId,
         metadata: { groupId: groupId.toString(), from: 'todo', to: 'in_progress' },
       });
+      expect(notifications.notifyTaskStatusChanged).toHaveBeenCalled();
       expect(notifications.notifyTaskAssigned).not.toHaveBeenCalled();
     });
 
@@ -125,6 +136,7 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
         targetId: taskId,
         metadata: { groupId: groupId.toString(), from: 'todo', to: 'done' },
       });
+      expect(notifications.notifyTaskStatusChanged).toHaveBeenCalledWith(updated);
       expect(notifications.notifyTaskAssigned).toHaveBeenCalledWith(updated);
     });
 
@@ -162,6 +174,7 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
         targetId: taskId,
         metadata: { groupId: groupId.toString() },
       });
+      expect(notifications.notifyTaskDeleted).toHaveBeenCalledWith({ _id: taskId, groupId });
       expect(result).toEqual({ deleted: true });
     });
 

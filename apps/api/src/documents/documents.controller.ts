@@ -44,6 +44,7 @@ import {
   newObjectId,
 } from '@kms/data';
 import { AdminOnlyGuard } from '../common/admin-only.guard';
+import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 import { DocumentsPermissionsService } from './documents-permissions.service';
 import { MulterExceptionFilter } from './multer-exception.filter';
 import { MAX_UPLOAD_BYTES } from './upload-limits';
@@ -78,6 +79,7 @@ export class DocumentsController {
     private readonly deletionVerifications: DeletionVerificationsRepository,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(INGESTION_QUEUE) private readonly ingestionQueue: IngestionQueue,
+    private readonly notifications: NotificationDispatchService,
   ) {}
 
   /**
@@ -159,6 +161,7 @@ export class DocumentsController {
       targetId: documentId,
       metadata: { recycleBinEntryId: entry._id.toString(), contentHashSha256: latestVersion?.contentHashSha256 },
     });
+    await this.notifications.notifyFileDeleted(existing);
 
     return { recycleBinEntryId: entry._id.toString() };
   }
@@ -268,13 +271,20 @@ export class DocumentsController {
     // createDocument leaves an orphaned DocumentVersion with no parent Document — dead,
     // invisible data (nothing queries versions except through their document), never a
     // correctness or cross-tenant issue. Same accepted-risk class as ADR-0005's permVersion bump.
-    await this.documents.createDocument({
+    const created = await this.documents.createDocument({
       id: documentId,
       folderId: toObjectId(folderId),
       name: file.originalname,
       latestVersionId: version._id,
       createdBy: scope.userId,
     });
+
+    await this.auditEvents.record({
+      action: 'document.upload',
+      targetId: documentId,
+      metadata: { folderId, versionId: version._id.toString(), versionNumber: 1 },
+    });
+    await this.notifications.notifyFileAdded(created);
 
     this.ingestionQueue.enqueueScan({ tenantId: scope.tenantId.toString(), documentId: documentId.toString(), versionId: version._id.toString() });
     return { documentId: documentId.toString(), versionId: version._id.toString(), versionNumber: 1, status: 'queued' };

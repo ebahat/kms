@@ -23,12 +23,13 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
   let deletionVerifications: any;
   let storage: any;
   let ingestionQueue: any;
+  let notifications: any;
   let controller: DocumentsController;
 
   beforeEach(() => {
     cls = { get: jest.fn().mockReturnValue({ tenantId, userId, role: 'user', edition: 'kb' }) };
     documents = {
-      createDocument: jest.fn().mockResolvedValue({ _id: newObjectId() }),
+      createDocument: jest.fn().mockImplementation((doc) => Promise.resolve({ _id: doc.id ?? newObjectId(), ...doc })),
       findById: jest.fn(),
       setLatestVersion: jest.fn().mockResolvedValue(undefined),
       deleteOne: jest.fn().mockResolvedValue(undefined),
@@ -62,6 +63,7 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       deleteObject: jest.fn().mockResolvedValue(undefined),
     };
     ingestionQueue = { enqueueScan: jest.fn() };
+    notifications = { notifyFileAdded: jest.fn().mockResolvedValue(undefined), notifyFileDeleted: jest.fn().mockResolvedValue(undefined) };
     controller = new DocumentsController(
       cls,
       documents,
@@ -73,6 +75,7 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       deletionVerifications,
       storage,
       ingestionQueue,
+      notifications,
     );
   });
 
@@ -85,6 +88,15 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       expect(documents.createDocument).toHaveBeenCalledWith(expect.objectContaining({ folderId, name: 'report.pdf' }));
       expect(ingestionQueue.enqueueScan).toHaveBeenCalledWith(expect.objectContaining({ tenantId: tenantId.toString() }));
       expect(result).toEqual(expect.objectContaining({ versionNumber: 1, status: 'queued' }));
+    });
+
+    it('records an audit event for the upload and sends the fileAdded notification', async () => {
+      await controller.upload(fakeMulterFile(), { folderId: folderId.toString() });
+
+      expect(auditEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'document.upload', metadata: expect.objectContaining({ folderId: folderId.toString(), versionNumber: 1 }) }),
+      );
+      expect(notifications.notifyFileAdded).toHaveBeenCalledWith(expect.objectContaining({ folderId, name: 'report.pdf' }));
     });
 
     it('rejects with no file', async () => {
@@ -247,6 +259,12 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       expect(auditEvents.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'document.delete', targetId: documentId, metadata: expect.objectContaining({ contentHashSha256: 'h2' }) }),
       );
+    });
+
+    it('sends the fileDeleted notification', async () => {
+      await controller.delete(documentId.toString());
+
+      expect(notifications.notifyFileDeleted).toHaveBeenCalledWith(expect.objectContaining({ _id: documentId, folderId }));
     });
   });
 

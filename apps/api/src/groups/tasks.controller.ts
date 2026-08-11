@@ -43,6 +43,7 @@ export class TasksController {
 
     await this.auditEvents.record({ action: 'kanban.task.created', targetId: task._id, metadata: { groupId } });
     if (task.assigneeUserId) await this.notifications.notifyTaskAssigned(task);
+    await this.notifications.notifyTaskAdded(task);
 
     return task;
   }
@@ -72,12 +73,12 @@ export class TasksController {
         metadata: { groupId, from: existing.column, to: update.column },
       });
     }
-    if (update.assigneeUserId) {
-      const updated = await this.tasks.findById(id);
-      await this.notifications.notifyTaskAssigned(updated!);
-    }
 
-    return this.tasks.findById(id);
+    const updated = update.column || update.assigneeUserId ? await this.tasks.findById(id) : existing;
+    if (update.column) await this.notifications.notifyTaskStatusChanged(updated!);
+    if (update.assigneeUserId) await this.notifications.notifyTaskAssigned(updated!);
+
+    return updated;
   }
 
   @Delete(':taskId')
@@ -91,6 +92,7 @@ export class TasksController {
 
     await this.tasks.deleteOne({ _id: id });
     await this.auditEvents.record({ action: 'kanban.task.deleted', targetId: id, metadata: { groupId } });
+    await this.notifications.notifyTaskDeleted(existing);
 
     return { deleted: true };
   }
