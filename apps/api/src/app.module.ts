@@ -36,6 +36,9 @@ import {
   Task,
   TaskSchema,
   TasksRepository,
+  UserNotificationPreference,
+  UserNotificationPreferenceSchema,
+  UserNotificationPreferencesRepository,
 } from '@kms/data';
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
@@ -47,6 +50,7 @@ import { TasksController } from './groups/tasks.controller';
 import { CalendarController } from './groups/calendar.controller';
 import { GroupsMembershipService } from './groups/groups-membership.service';
 import { NotificationDispatchService } from './notifications/notification-dispatch.service';
+import { NotificationPreferencesController } from './notifications/notification-preferences.controller';
 import { storageProviderProvider, ingestionQueueProvider } from './documents/documents.providers';
 import { notificationProviderProvider } from './notifications/notifications.providers';
 import { SessionAuthGuard } from './auth/session-auth.guard';
@@ -84,6 +88,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: DeletionVerification.name, schema: DeletionVerificationSchema },
       { name: Event.name, schema: EventSchema },
       { name: Task.name, schema: TaskSchema },
+      { name: UserNotificationPreference.name, schema: UserNotificationPreferenceSchema },
     ]),
     // Feature modules (chat, ...) register here starting later Phase 2/3 items.
   ],
@@ -95,6 +100,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     EventsController,
     TasksController,
     CalendarController,
+    NotificationPreferencesController,
   ],
   providers: [
     redisAppProvider,
@@ -120,6 +126,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     DocumentsPermissionsService,
     EventsRepository,
     TasksRepository,
+    UserNotificationPreferencesRepository,
     GroupsMembershipService,
     NotificationDispatchService,
     AdminOnlyGuard,

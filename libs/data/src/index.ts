@@ -28,3 +28,5 @@ export * from './models/event.schema';
 export * from './repositories/events.repository';
 export * from './models/task.schema';
 export * from './repositories/tasks.repository';
+export * from './models/user-notification-preference.schema';
+export * from './repositories/user-notification-preferences.repository';
