@@ -1,6 +1,6 @@
 # Phased Implementation Plan — Multi-Tenant RAG Knowledge Base
 
-**Date:** 2026-07-11 · **Status:** IN PROGRESS — Phase 0 complete; Phase 1 core spine (1.2 partial, 1.4) complete and verified
+**Date:** 2026-07-11 (updated 2026-08-12) · **Status:** IN PROGRESS — Phase 0 and Phase 1 complete; Phase 2A backend complete and merged to `main` (UI screens still open, see Phase 2A.3); Phase 2 partially complete as a side effect of Phase 2A's own needs (data model, permission-resolution library, upload/serving/recycle-bin all real and tested) — the actual remaining Phase 2 gap is the folder/group **management API** (no `FoldersController`/`GroupsController` exist), plus UI and tests; see Phase 2's audit note below
 **Sources:** ADRs 0001–0009 (all Accepted; 0008 gated), `docs/architecture/system-overview.md`, `docs/architecture/design-review-2026-07-10.md`, `docs/test_plan_v01.md`, `docs/security_audit_plan_v01.md`, `docs/ui/screens_spec_v01.md`, PRD `docs/requirements_v02.md`
 **Prime directive (ADR-0009 + working rule 3):** guards before features — the monorepo, lint rules, backstop plugin, CI gates, and cross-tenant test harness exist **before** the first feature endpoint. Every phase ships its tests inside the phase, not after.
 
@@ -48,25 +48,41 @@ Each phase ends with: unit/integration tests green, the code-quality pipeline (w
 
 ## Phase 2 — Folders, permissions, file storage
 
-- [ ] 2.1 `folders` tree + `groups` + folder-permission records (ADR-0002/0005); ~2,000-folders/tenant cardinality bound enforced with a friendly error.
-- [ ] 2.2 Permission resolution (ADR-0005): pure function (depth-sorted, override-not-merge, principal union, `isPublic`), versioned Redis cache keyed `{tenantId,userId,permVersion}`, per-tenant `permVersion` bump on any grant change; Redis-outage fallback = per-request recompute.
-- [ ] 2.3 Upload path (ADR-0006/0003): API-streamed, magic-byte + 50 MB pre-buffer checks, quota gate **before** enqueue, `documents`/`documentVersions` records, per-tenant GCS prefixes.
-- [ ] 2.4 Serving: V4 signed URLs ≤ 5 min, attachment-only, permission re-check at issuance (ADR-0006); download audit events.
-- [ ] 2.5 Recycle bin + deletion machinery: `recycleBinEntries`, purge jobs, `deletionVerifications` + certificates (ADR-0002/0006).
-- [ ] 2.6 UI: folder tree, upload with progress, document list/states, permission-management and group screens (UI spec P0).
-- [ ] 2.7 Tests: permission-matrix integration suite (inheritance/override/public), 404-not-403 assertions folded into the cross-tenant suite, signed-URL expiry + tamper tests (test plan §3.3–3.4).
+**Audited 2026-08-12** (before starting Phase 2 planning, given how much Phase 2A's own work ended up
+depending on this surface): the pieces Phase 2A's document/notification retrofit needed are real and
+tested — the folder/group **data model**, the **entire ADR-0005 resolution algorithm + versioned Redis
+cache** as a library (`libs/permissions`, including a working `PermissionCache.bumpVersion()`), and
+`DocumentsPermissionsService` consuming it for upload/download/delete. But **there is no
+`FoldersController` and no `GroupsController` anywhere in `apps/api`** — no route exists to create a
+folder, browse the tree, view/grant/revoke a folder's permissions, or create a group/manage its
+membership. Every group in the codebase today exists only because a test fixture created it directly
+via `GroupsRepository`; `PermissionCache.bumpVersion()` is currently dead code because nothing ever
+mutates a grant through the API. This is the actual remaining scope below, not a thin UI-only pass.
 
-**Exit criteria:** a user sees exactly their permitted tree; grant changes take effect within the cache-version rules; deletion produces a verification record; all P2 tests green.
+- [DONE] 2.1a Data model: `folders`/`groups` schemas + repositories (ADR-0002/0005); ~2,000-folders/tenant and depth-≤10 cardinality bounds enforced (`FoldersRepository.createFolder`).
+- [ ] 2.1b **Folder/group management API** (the real gap): `FoldersController` (create, list/browse tree, get detail, grant/revoke — manage-tier only per ADR-0005) and `GroupsController` (create, list, membership add/remove). Neither exists yet.
+- [DONE] 2.2a Permission resolution library (ADR-0005): pure function (depth-sorted, override-not-merge, principal union, `isPublic`) + versioned Redis cache (`libs/permissions`), consumed today by `DocumentsPermissionsService`.
+- [ ] 2.2b **Wire `permVersion` bump to real grant mutations** — `PermissionCache.bumpVersion(tenantId)` exists and is correct but is only exercised once 2.1b's grant-mutation endpoints exist to call it in the same operation as the write (ADR-0005's data-flow table).
+- [DONE] 2.3 Upload path (ADR-0006/0003): API-streamed, magic-byte + 50 MB pre-buffer checks, quota gate before enqueue, `documents`/`documentVersions` records, per-tenant GCS prefixes (`DocumentsController.upload`).
+- [DONE] 2.4 Serving: V4 signed URLs ≤ 5 min, attachment-only, permission re-check at issuance (ADR-0006); download audit events.
+- [DONE] 2.5 Recycle bin + deletion machinery: `recycleBinEntries`, purge (`DocumentsController.restore`/`.purgeEarly`), `deletionVerifications` records. Tenant-offboarding deletion **certificate** (PRD §14, distinct from the per-document verification record above) is not built — flagged as a separate, smaller, tenant-lifecycle-scoped gap in `portal-api`, not blocking the rest of Phase 2.
+- [ ] 2.6 UI: folder tree, upload with progress, document list/states, permission-management (grant/revoke, widening badge, "why can Dana see this" preview) and group screens (UI spec P0, B2/C2/C3).
+- [ ] 2.7 Tests: permission-matrix integration suite (inheritance/override/public/widening), 404-not-403 assertions actually populated into the still-skeleton `test/cross-tenant/` harness, signed-URL expiry + tamper tests (test plan §3.3–3.4).
+
+**Exit criteria:** a user sees exactly their permitted tree; grant changes take effect within the cache-version rules (requires 2.1b + 2.2b); deletion produces a verification record; all P2 tests green.
 
 ## Phase 2A — Calendar & Task Management *(parallel lane — customer-MVP-driven, generic, no P3/P4 dependency)*
 
-**Status:** NOT STARTED — scoped in the 2026-08-04 brainstorming session; not yet ADR'd. Can start once P1 lands (needs tenancy/users/groups only); does not need P3 (ingestion) or P4 (chat) to exist.
+**Status:** DONE (backend) — implemented via `docs/plans/phase-2a-calendar-kanban-04-08-2026-plan.md`'s
+11-task SDD ledger on branch `phase-2a-calendar-kanban`, merged to `main` 2026-08-12 (`0a3d015..9c278d9`,
+fast-forward, full workspace check 32/32 green post-merge). UI screens themselves are **not** built —
+only the spec addendum (2A.3 below).
 
-- [ ] 2A.0 New ADRs needed before build: (a) **module-entitlement mechanism** (extends ADR-0009) — `tenant.enabledModules: Set<'governance'|'kanban'|'calendar'|'llm'>` + a `@Module(...)` decorator/`ModuleGuard` parallel to the existing `EditionGuard` (404 on disabled-module routes), since calendar, kanban, governance, and LLM/chat itself are each separately priced per tenant; (b) calendar/event data model + email delivery — pulls the P5.4 "transactional email provider decision" forward rather than deferring it; (c) kanban board data model + concurrent multi-user edit handling.
-- [ ] 2A.1 Calendar: events/meetings/due-dates/special-events scoped to a `group`; per-member email invitations; recurrence/timezone/ICS handling decided in the ADR.
-- [ ] 2A.2 Kanban: boards/columns/cards scoped to a `group`; task assignment; frontend drag-drop library choice deferred to the ADR (not decided in brainstorming — candidates noted: `@dnd-kit`).
-- [ ] 2A.3 UI: calendar view, kanban board view, invitation email templates.
-- [ ] 2A.4 Tests: cross-tenant suite extended for calendar/kanban routes; email-delivery integration tests (fixtures only, no real sends in CI).
+- [DONE] 2A.0 ADRs: `docs/adr/0012-module-entitlement.md` (`tenant.enabledModules`, `@Module(...)` decorator + `ModuleGuard`, parallel to `EditionGuard`) and `docs/adr/0013-email-provider.md` (transactional email provider — pulled P5.4 forward as planned).
+- [DONE] 2A.1 Calendar: `events` collection, `EventsController` (`@Module('calendar')`), per-member invitation email (always-on, not preference-gated). Recurrence/ICS explicitly deferred, not built (design decision 3).
+- [DONE] 2A.2 Kanban: `tasks` collection, `TasksController` (`@Module('kanban')`), fixed 3-column board, assignment. No drag-drop library chosen — no UI code exists yet to need one.
+- [PARTIAL] 2A.3 UI: only `docs/ui/calendar-kanban-notifications-addendum-v01.md` (shaped spec, screens F1–F4) exists. No actual calendar/kanban/notification-preferences screens are built in `apps/web` — this is genuinely the next open item for this lane, not done.
+- [DONE] 2A.4 Tests: cross-tenant/non-member/module-disabled integration coverage (`apps/api/test/*.integration.spec.ts`, via `mongodb-memory-server` + `ioredis-mock` — no live Mongo/Redis needed); notification triggers unit-tested with a fake provider, no real sends anywhere.
 
 **Built generic, not governance-gated:** calendar/kanban attach to any `group` and ship independent of the committee/document-type model below, so the MVP customer isn't blocked on the Kibbutz-specific work.
 
