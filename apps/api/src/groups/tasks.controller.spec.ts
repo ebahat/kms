@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { newObjectId } from '@kms/data';
 import { TasksController } from './tasks.controller';
 
@@ -138,6 +138,24 @@ describe('TasksController (Phase 2A kanban, ADR-0012 @Module(\'kanban\'))', () =
       });
       expect(notifications.notifyTaskStatusChanged).toHaveBeenCalledWith(updated);
       expect(notifications.notifyTaskAssigned).toHaveBeenCalledWith(updated);
+    });
+
+    it('does not re-fire the assignment write/notification when the assignee is unchanged', async () => {
+      const assigneeUserId = newObjectId();
+      tasks.findById.mockResolvedValue({ _id: taskId, groupId, column: 'todo', assigneeUserId });
+
+      await controller.update(groupId.toString(), taskId.toString(), { column: 'in_progress', assigneeUserId: assigneeUserId.toString() });
+
+      expect(tasks.updateOne).toHaveBeenCalledWith({ _id: taskId }, { $set: { column: 'in_progress' } });
+      expect(notifications.notifyTaskAssigned).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid column value with a 400, before touching the task', async () => {
+      await expect(
+        controller.update(groupId.toString(), taskId.toString(), { column: 'archived' as any }),
+      ).rejects.toThrow(BadRequestException);
+      expect(tasks.findById).not.toHaveBeenCalled();
+      expect(tasks.updateOne).not.toHaveBeenCalled();
     });
 
     it('returns 404 (never 403) for a non-member', async () => {

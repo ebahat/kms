@@ -148,28 +148,33 @@ export class NotificationDispatchService {
     return pref[field] === 'mine' || pref[field] === 'all' ? [mineOwnerId] : [];
   }
 
+  /**
+   * Candidates are checked concurrently rather than one DB round-trip at a
+   * time. `groupAccessCache` stores promises, not resolved values, and the
+   * has/set pair around each cache miss never straddles an `await` — so
+   * concurrent candidates sharing a group still single-flight into one
+   * `foldersAccessibleToGroup` call rather than issuing duplicates.
+   */
   private async resolveAllRecipientsForFolder(field: NotificationPreferenceField, folderId: ObjectId, actorUserId: ObjectId): Promise<ObjectId[]> {
     const candidates = (await this.preferences.findAllWithPreference(field, 'all')).map((p) => p.userId).filter((id) => !id.equals(actorUserId));
     if (candidates.length === 0) return [];
 
-    const groupAccessCache = new Map<string, ObjectId[]>();
-    const recipients: ObjectId[] = [];
-    for (const userId of candidates) {
-      const memberGroups = await this.groups.findForMember(userId);
-      let hasAccess = false;
-      for (const group of memberGroups) {
-        const key = group._id.toString();
-        if (!groupAccessCache.has(key)) {
-          groupAccessCache.set(key, await foldersAccessibleToGroup(this.folders, group._id));
+    const groupAccessCache = new Map<string, Promise<ObjectId[]>>();
+    const results = await Promise.all(
+      candidates.map(async (userId) => {
+        const memberGroups = await this.groups.findForMember(userId);
+        for (const group of memberGroups) {
+          const key = group._id.toString();
+          if (!groupAccessCache.has(key)) {
+            groupAccessCache.set(key, foldersAccessibleToGroup(this.folders, group._id));
+          }
+          const accessibleFolders = await groupAccessCache.get(key)!;
+          if (accessibleFolders.some((id) => id.equals(folderId))) return userId;
         }
-        if (groupAccessCache.get(key)!.some((id) => id.equals(folderId))) {
-          hasAccess = true;
-          break;
-        }
-      }
-      if (hasAccess) recipients.push(userId);
-    }
-    return recipients;
+        return null;
+      }),
+    );
+    return results.filter((id): id is ObjectId => id !== null);
   }
 
   private async resolveAllRecipientsForGroup(field: NotificationPreferenceField, groupId: ObjectId, actorUserId: ObjectId): Promise<ObjectId[]> {

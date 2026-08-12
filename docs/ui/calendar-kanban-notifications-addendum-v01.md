@@ -24,10 +24,13 @@ spec's KB/OCR edition split, not a replacement for it. Attaches to the existing 
 
 Unchanged from the base spec's §2 table for the KB tenant-user row, with one addition: **any group
 member** (not a tiered read/edit/manage split like folders — design decision 2) can create, edit,
-move, and delete events/tasks in that group, including cards/events they didn't create. There is no
-"tenant admin" elevation for these screens beyond ordinary membership — a tenant admin who isn't a
-group member gets the same 404 as any other non-member (consistent with the base spec's "denied
-reads render as not-found" rule, §3.2).
+move, and delete events/tasks in that group, including cards/events they didn't create. **Tenant
+admins bypass group membership entirely** for these screens (`GroupsMembershipService.isMember`
+short-circuits to `true` for `role === 'admin'`, matching the existing PRD §7 precedent in
+`DocumentsPermissionsService`) — an admin can reach any group's calendar/kanban in their tenant, not
+just groups they belong to. Only a non-admin, non-member user gets the base spec's "denied reads
+render as not-found" 404 (§3.2); there is no separate "you can see it but can't edit" tier for either
+role.
 
 ## 3. Global requirements
 

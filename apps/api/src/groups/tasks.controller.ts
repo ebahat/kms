@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import { Module } from '@kms/contracts';
-import { AuditEventsRepository, SCOPE_CLS_KEY, Scope, TaskColumn, TasksRepository, toObjectId } from '@kms/data';
+import { AuditEventsRepository, SCOPE_CLS_KEY, Scope, TASK_COLUMNS, TaskColumn, TasksRepository, toObjectId } from '@kms/data';
 import { GroupsMembershipService } from './groups-membership.service';
 import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 
@@ -56,13 +56,19 @@ export class TasksController {
   ) {
     if (!(await this.membership.isMember(groupId))) throw new NotFoundException();
 
+    if (body.column !== undefined && !TASK_COLUMNS.includes(body.column)) {
+      throw new BadRequestException(`invalid column: ${body.column}`);
+    }
+
     const id = toObjectId(taskId);
     const existing = await this.tasks.findById(id);
     if (!existing || !existing.groupId.equals(toObjectId(groupId))) throw new NotFoundException();
 
     const update: Record<string, unknown> = {};
     if (body.column && body.column !== existing.column) update.column = body.column;
-    if (body.assigneeUserId) update.assigneeUserId = toObjectId(body.assigneeUserId);
+    if (body.assigneeUserId && body.assigneeUserId !== existing.assigneeUserId?.toString()) {
+      update.assigneeUserId = toObjectId(body.assigneeUserId);
+    }
 
     if (Object.keys(update).length > 0) await this.tasks.updateOne({ _id: id }, { $set: update });
 

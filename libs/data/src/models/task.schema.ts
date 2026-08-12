@@ -2,7 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { tenantScopeBackstopPlugin } from '../backstop.plugin';
 
-export type TaskColumn = 'todo' | 'in_progress' | 'done';
+export const TASK_COLUMNS = ['todo', 'in_progress', 'done'] as const;
+export type TaskColumn = (typeof TASK_COLUMNS)[number];
 
 /** Kanban tasks, one board per group, fixed 3 columns (Phase 2A design, decision 4). */
 @Schema({ collection: 'tasks', timestamps: true })
