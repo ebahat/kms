@@ -1,6 +1,8 @@
 # Phase 2 — Folder/Group Management API (backend) — 2026-08-12
 
-**Status:** DRAFT, not yet executed.
+**Status:** DRAFT (revised 2026-08-12 after a verification pass against the actual code — see
+"Revision note" below). Not yet executed.
+
 **Scope:** the actual remaining backend gap in Phase 2 (`docs/plans/implementation-phases-11-07-2026-plan.md`),
 found by audit on 2026-08-12: `FoldersController` and `GroupsController` do not exist anywhere in
 `apps/api`, despite the full ADR-0005 permission-resolution library and `DocumentsPermissionsService`
@@ -9,49 +11,135 @@ to sit behind. **UI (2.6) and the permission-matrix/cross-tenant/signed-URL inte
 (2.7) are explicitly deferred to a follow-on plan** — this plan covers backend + unit tests only,
 matching how Phase 2A sequenced its own backend-then-integration-tests-then-UI-spec split.
 
-**Sources:** `docs/adr/0005-rbac-folder-permissions.md` (resolution algorithm, access tiers, grant
-model, `permVersion` cache-invalidation contract, widening detection), `docs/adr/0006-file-storage-and-serving.md`
-(storage key builder, deletion machinery this doesn't touch), `docs/requirements_v02.md` §7 (folder
-CRUD, group management, PRD-level behavior), `docs/ui/screens_spec_v01.md` B2/C2/C3 (what the
-eventual UI needs from this API — informs response shapes, not built here).
+**Sources:** `docs/adr/0005-rbac-folder-permissions.md`, `docs/adr/0006-file-storage-and-serving.md`,
+`docs/requirements_v02.md` §7, `docs/ui/screens_spec_v01.md` B2/C2/C3 (informs response shapes, not
+built here).
 
-**Process note (lesson from Phase 2A's Task 11 final review):** that review found the Events/Tasks/
+## Revision note (what the verification pass changed)
+
+The first draft flagged three things as "check the code before assuming." All three were checked; the
+answers materially changed the plan:
+
+1. **Widening detection is already fully built _and_ cached** — `computeFolderWidening()` plus
+   `computeFolderWideningCached()` (`libs/permissions/src/permission-cache.ts:110-132`), with its own
+   `{tenantId, permVersion}` cache key, a `becamePublic` field, and the subtle "a public parent's
+   audience is already everyone, so no child can be broader" case handled
+   (`resolve-permissions.ts:133`). The read-routes task shrank from "may need to build this" to pure
+   wiring.
+2. **A dangling `parentId` silently breaks permission resolution for an entire tenant.** This is now
+   Task 1, a prerequisite for every route that can create or move a folder. Detail in that task.
+3. **The repositories have none of the needed mutation methods** — `FoldersRepository` has only
+   `findAllForTenant`/`findChildren`/`createFolder`; `GroupsRepository` has only
+   `findAllForTenant`/`findForMember`. Every write path below adds its own.
+
+Also added since the first draft: an HTTP error-mapping step (the existing domain errors map to
+nothing and would surface as 500s), an explicit decision on revoke-the-last-grant semantics, and an
+`isPublic` mutation route — all three were missing entirely.
+
+**Process note (carried over, from Phase 2A's Task 11 review):** that review found the Events/Tasks/
 Calendar controllers had zero runtime request-body validation, unlike `AuthController`/`DocumentsController`'s
-established zod pattern (`libs/contracts/src/*-dto.ts`, `SomeRequestSchema.parse(body)`). Every task
-below uses that pattern from the start — new DTO files in `libs/contracts`, `.parse()` in the
-controller, `BadRequestException` on failure — not retrofitted later.
+zod pattern (`libs/contracts/src/*-dto.ts` + `SomeRequestSchema.parse(body)`). Every route below uses
+that pattern from the start, and every route gets at least one test proving its schema **rejects** a
+bad body — not just that the happy path validates.
 
 ## Task list overview
 
-1. Contracts: zod schemas for folder/group requests (`libs/contracts`)
-2. `FoldersController` — read routes (list/tree, detail, permission-scoped)
-3. `FoldersController` — write routes (create, rename/move, delete)
-4. `FoldersController` — grant management + `permVersion` wiring + effective-permission preview
-5. `GroupsController` — CRUD + membership
-6. Cross-tenant/non-member/module-boundary unit coverage + full workspace regression check
+1. **Folder data-integrity hardening** (prerequisite — prevents a tenant-wide outage)
+2. Contracts: zod schemas for folder/group requests
+3. `FoldersController` — read routes (list/tree, detail, widening badge)
+4. `FoldersController` — write routes (create/rename/move/delete) + domain-error HTTP mapping
+5. `FoldersController` — grants, `isPublic`, inheritance reset, `permVersion` wiring, effective-permission preview
+6. `GroupsController` — CRUD + membership
 7. Final whole-branch review + finish
+
+Per-task coverage discipline (cross-tenant 404s, permission-miss 404s, admin-only rejections, invalid-body
+400s) lives inside each task's own TDD step — the first draft's separate "audit your own specs" task was
+dropped as busywork.
 
 ---
 
-## Task 1: Contracts — folder/group request DTOs
+## Task 1: Folder data-integrity hardening (do this first)
+
+**Why this is first:** `FoldersRepository.createFolder` (`libs/data/src/repositories/folders.repository.ts:29-33`)
+resolves the parent through the tenant-scoped `findById`. When the parent doesn't exist — nonexistent
+id, or a **valid id belonging to another tenant** — it silently sets `path = []` **but still stores the
+caller-supplied `parentId`**. That row is then a landmine:
+
+- `computeEffectiveBundles` (`libs/permissions/src/resolve-permissions.ts:36-40`) **throws** when any
+  folder references a parent that isn't in the input set.
+- `resolveFolderPermissionsCached` does **not** catch it — its `try/catch` blocks wrap only the Redis
+  calls; the `resolveFolderPermissions(...)` call at `permission-cache.ts:101` is bare.
+- `DocumentsPermissionsService.hasAccess` doesn't catch it either.
+
+Net effect: **one bad folder create permanently breaks every permission check for every user in that
+tenant** — browse, upload, download, delete — until the row is manually repaired. `computeFolderWidening`
+shares the same helper, so the widening path dies with it. The identical failure mode exists for a
+**move that creates a cycle** (cycle detector throws at `resolve-permissions.ts:42`).
+
+This is latent today only because no route can create or move a folder. **Tasks 4 and 5 are exactly
+what make it reachable**, so it gets fixed before them, not alongside them.
 
 **Files:**
-- Create: `libs/contracts/src/folder-dto.ts`
-- Create: `libs/contracts/src/group-dto.ts`
-- Modify: `libs/contracts/src/index.ts` (export both)
+- Modify: `libs/data/src/repositories/folders.repository.ts` / `.spec.ts`
+- Modify: `libs/permissions/src/resolve-permissions.ts` / `.spec.ts`
 
-**Interfaces produced** (mirror `libs/contracts/src/document-dto.ts`'s shape exactly — `z.object`,
-`.parse()`-ready, one `z.infer` type export per schema):
+- [ ] **Step 1: Prevent bad data at the source.** `createFolder` must reject a non-null `parentId`
+  that doesn't resolve inside the tenant, rather than silently degrading to `path = []`. Add a
+  `FolderParentNotFoundError` to `libs/data/src/errors.ts` alongside the existing folder errors
+  (Task 4 maps it to a 404). Do **not** rely on the controller alone for this — the repository is the
+  invariant's owner, and a future second caller must not be able to reintroduce the landmine.
+
+- [ ] **Step 2: Contain the blast radius (defense in depth).** Decide and implement how the resolver
+  behaves when a folder's parent is genuinely absent from the input. **Recommended: fail closed per
+  folder, not per tenant** — treat an orphaned folder (and its subtree) as inaccessible, exclude it
+  from every permitted set, and keep resolving the rest of the tree.
+
+  Rationale for the change, and the argument against it, both recorded because this is a real
+  tradeoff: the current throw is a deliberate loud signal for the documented caller contract
+  ("callers must pass the full tenant folder list"), and silencing it could mask a genuine caller bug.
+  But the function cannot distinguish a caller bug from a corrupt row, and the cost of guessing wrong
+  is asymmetric — a caller bug surfaces immediately in tests and dev, whereas a corrupt row in
+  production currently takes down an entire tenant's access. Fail-closed-per-folder loses no security
+  (an orphan grants nothing) and converts a tenant outage into one unreachable folder. If the
+  implementer disagrees after reading both functions, keep the throw and say so in the task report —
+  but then Step 1 becomes load-bearing on its own and needs a migration/repair story for any row that
+  slips through.
+
+  Whichever way this goes: cycles keep throwing (a cycle is unambiguously a bug, and there is no
+  meaningful fail-closed interpretation of one).
+
+- [ ] **Step 3: Tests.** Repository: rejects a nonexistent parentId; rejects a cross-tenant parentId
+  (the sharper case — a *valid* ObjectId from another tenant). Resolver: an orphaned folder doesn't
+  throw and doesn't appear in any permitted set, while its unaffected siblings resolve normally.
+
+- [ ] Step 4: `pnpm turbo run build lint test:unit`; commit.
+
+```bash
+git add libs/data/src/repositories/folders.repository.ts libs/data/src/repositories/folders.repository.spec.ts \
+  libs/data/src/errors.ts libs/permissions/src/resolve-permissions.ts libs/permissions/src/resolve-permissions.spec.ts
+git commit -m "fix: reject dangling folder parentId and contain orphan blast radius in permission resolution"
+```
+
+---
+
+## Task 2: Contracts — folder/group request DTOs
+
+**Files:**
+- Create: `libs/contracts/src/folder-dto.ts`, `libs/contracts/src/group-dto.ts`
+- Modify: `libs/contracts/src/index.ts`
+
+Mirror `libs/contracts/src/document-dto.ts`'s shape exactly (`z.object`, one `z.infer` type export per
+schema):
 
 ```typescript
 // folder-dto.ts
 export const CreateFolderRequestSchema = z.object({
-  parentId: z.string().nullable(), // null = root
+  parentId: z.string().nullable(),           // null = root
   name: z.string().trim().min(1).max(255),
 });
-
 export const RenameFolderRequestSchema = z.object({ name: z.string().trim().min(1).max(255) });
-export const MoveFolderRequestSchema = z.object({ parentId: z.string().nullable() });
+export const MoveFolderRequestSchema   = z.object({ parentId: z.string().nullable() });
+export const SetFolderPublicRequestSchema = z.object({ isPublic: z.boolean() });
 
 export const FolderGrantRequestSchema = z.object({
   principalType: z.enum(['user', 'group']),
@@ -71,12 +159,8 @@ export const UpdateGroupMembersRequestSchema = z.object({
 });
 ```
 
-Adjust exact field names/shapes if a later task discovers a real mismatch against `FoldersRepository`/
-`GroupsRepository`'s actual method signatures (check `libs/data/src/repositories/folders.repository.ts`
-and `groups.repository.ts` before finalizing — `createFolder` already exists there and takes
-`{name, parentId}`, don't duplicate its cardinality/depth-bound logic in the DTO).
-
-- [ ] Step 1: Write the schemas, export from `libs/contracts/src/index.ts`.
+- [ ] Step 1: Write + export the schemas. Don't duplicate `createFolder`'s cardinality/depth-bound
+  logic here — that stays in the repository.
 - [ ] Step 2: `pnpm --filter @kms/contracts build`; commit.
 
 ```bash
@@ -86,247 +170,228 @@ git commit -m "feat: folder/group request DTOs (zod)"
 
 ---
 
-## Task 2: `FoldersController` — read routes
+## Task 3: `FoldersController` — read routes
 
 **Files:**
-- Create: `apps/api/src/folders/folders.controller.ts`
-- Create: `apps/api/src/folders/folders.controller.spec.ts`
-- Modify: `apps/api/src/app.module.ts` (register controller — `FoldersRepository`/`GroupsRepository`/
-  `PermissionCache` are already registered providers, per `documents-permissions.service.ts`'s own
-  constructor — reuse `DocumentsPermissionsService`'s exact DI pattern for the permission cache token)
+- Create: `apps/api/src/folders/folders.controller.ts` / `.spec.ts`
+- Modify: `apps/api/src/app.module.ts` (register the controller — `FoldersRepository`, `GroupsRepository`
+  and the `PERMISSION_CACHE` token are already registered providers; copy `DocumentsPermissionsService`'s
+  DI pattern rather than inventing one)
 
 **Interfaces:**
-- Consumes: `FoldersRepository.findAllForTenant`/`.findChildren`/`.findById` (all already exist,
-  `libs/data/src/repositories/folders.repository.ts`), `libs/permissions`' `resolveFolderPermissionsCached`/
-  `toFolderInputs`/`toPrincipalSet` (already exist, same import path `DocumentsPermissionsService` uses).
-- Produces: `GET /folders?parentId=` (root when omitted — lazy tree browsing, not a full-tree dump,
-  matching the ≤2000-folder cardinality bound's spirit even though a single response would technically
-  fit), `GET /folders/:id`.
+- Consumes: `FoldersRepository.findAllForTenant`/`.findChildren`/`.findById`;
+  `resolveFolderPermissionsCached` **and** `computeFolderWideningCached` from `@kms/permissions`
+  (both already exist and are already cached — this is wiring, not new logic).
+- Produces: `GET /folders?parentId=` (children of `parentId`, or roots when omitted),
+  `GET /folders/:id`.
 
-**Behavior (ADR-0005 §Consumption points + §Widening detection):**
-- Every returned folder is filtered to the caller's `permittedRead` set — a folder outside it simply
-  isn't in the list (never an error for the list route). `GET /folders/:id` on a folder outside
-  `permittedRead` (or a nonexistent id) returns 404 — same convention as `DocumentsController`.
-- Each returned folder includes: `id`, `name`, `parentId`, `hasExplicitGrants`, `isPublic`, the
-  caller's own tier on it (`read`/`edit`/`manage`, derived from which permitted-set(s) it's in — NOT
-  a raw grants dump for non-manage viewers), and `broaderThanParent`/`addedGroups` (ADR-0005's
-  widening badge — resolve via the same tree-walk the resolver already does; check
-  `libs/permissions/src/resolve-permissions.ts` for whether it already computes and returns this or
-  whether this task needs to add it — the ADR describes it as part of "step 2-4" of the resolver, so
-  it's plausible it's already computed and just not surfaced anywhere yet).
-- `GET /folders/:id` for a caller with `manage` tier additionally includes the full `grants` array
-  (principal-level detail — the C3 tenant-admin screen's data, not exposed to `read`/`edit` viewers
-  per ADR-0005's "individually-granted users remain visible only in the tenant-admin C3 screen" rule).
+**Behavior (ADR-0005 §Consumption points, §Widening detection):**
+- Results are filtered to the caller's `permittedRead`. A folder outside it is simply absent from the
+  list; `GET /folders/:id` on one returns **404**, same as a nonexistent id (sec §3.2 — never 403).
+- Each folder returns: `id`, `name`, `parentId`, `hasExplicitGrants`, `isPublic`, the caller's own
+  effective tier, and `broaderThanParent`/`addedGroups`/`becamePublic` from the widening map.
+  `addedGroups` must be resolved to group **names** for display (ADR-0005's badge is group-scoped by
+  design — never surface individually-granted users here; that's C3-admin-only).
+- `GET /folders/:id` additionally returns the raw `grants` array **only** when the caller has `manage`
+  on that folder — the C3 screen's data, withheld from `read`/`edit` viewers per ADR-0005.
 
-- [ ] Step 1: Read `libs/permissions/src/resolve-permissions.ts` in full first — confirm the exact
-  shape of `FolderPermissionResolution` and whether widening info is already attached or needs a
-  second call. Don't guess the interface; the ADR text is a description, the actual exported types in
-  `libs/permissions/src/types.ts` (`FolderWideningInfo`, `DecidingGrant`) are the contract.
-- [ ] Step 2: Implement `list`/`detail`, TDD against the unit spec (mock `FoldersRepository`/`GroupsRepository`/
-  `PermissionCache`, same style as `documents.controller.spec.ts`).
-- [ ] Step 3: Register in `app.module.ts`; run `apps/api` unit suite; commit.
+- [ ] Step 1: Implement both routes, TDD against the spec (mock the repositories + `PermissionCache`,
+  same style as `documents.controller.spec.ts`). Include: a folder outside `permittedRead` is absent
+  from the list; the same folder 404s on detail; `grants` is withheld below `manage` tier.
+- [ ] Step 2: Register in `app.module.ts`; run the `apps/api` unit suite; commit.
 
 ```bash
 git add apps/api/src/folders/folders.controller.ts apps/api/src/folders/folders.controller.spec.ts apps/api/src/app.module.ts
-git commit -m "feat: FoldersController read routes (list/detail, permission-scoped, widening badge)"
+git commit -m "feat: FoldersController read routes (permission-scoped list/detail + widening badge)"
 ```
 
 ---
 
-## Task 3: `FoldersController` — write routes (create/rename/move/delete)
+## Task 4: `FoldersController` — write routes + domain-error HTTP mapping
 
 **Files:**
 - Modify: `apps/api/src/folders/folders.controller.ts` / `.spec.ts`
+- Modify: `libs/data/src/repositories/folders.repository.ts` (add `renameFolder`, `moveFolder`)
+- Create: `apps/api/src/folders/folder-exception.filter.ts` / `.spec.ts`
 
-**Interfaces:**
-- Produces: `POST /folders` (create), `PATCH /folders/:id` (rename), `PATCH /folders/:id/move` (move —
-  separate route from rename since they need different tier checks, see below), `DELETE /folders/:id`.
+**Produces:** `POST /folders`, `PATCH /folders/:id` (rename), `PATCH /folders/:id/move`,
+`DELETE /folders/:id`.
 
 **Authorization (ADR-0005 "Access tiers"):**
-- **Create**: requires `edit` tier on the parent (`parentId: null` = root — creating a root folder
-  requires tenant-admin, since no parent exists to hold an `edit` grant; use the same
-  `scope.role === 'admin'` bypass `DocumentsPermissionsService` already uses for admins, and reject
-  non-admins creating at root with a clear error, not a bare 404, since this isn't a hidden-resource
-  case).
-- **Rename**: requires `manage` on the folder itself ("manage... plus delete/move/rename").
-- **Move**: requires `manage` on the folder AND `edit` (at least) on the destination parent — moving
-  into a folder you can't add content to shouldn't be possible. Validate the move doesn't exceed
-  `MAX_FOLDER_DEPTH` or create a cycle (moving a folder into its own descendant) — `FoldersRepository`
-  doesn't currently have a move method; check before assuming `createFolder`'s depth-check logic is
-  reusable as-is, it computes path from a fresh parent lookup, not a re-parent of an existing subtree
-  (moving a folder with children means every descendant's `path` needs updating too — this is the
-  trickiest part of this task, get it right before moving on, and write a dedicated test for
-  "moving a folder with descendants updates every descendant's path").
-- **Delete**: requires `manage`. **Design decision this task must make** (not resolved by any ADR —
-  ADR-0006's deletion machinery is document-scoped, not folder-scoped): keep it simple for MVP —
-  reject with a clear error if the folder has any children (subfolders) or any documents in it, rather
-  than building a folder-level recycle-bin/cascade-delete system. Document this as a deliberate scope
-  cut in the task report, not a silent gap.
+- **Create** — `edit` on the parent. `parentId: null` (root) requires tenant-admin, since there's no
+  parent to hold a grant; reject non-admins with a clear 403, not a 404 (this isn't a hidden-resource
+  case — the user knows roots exist). **Validate parent existence explicitly** (Task 1 hardened the
+  repository; the controller still maps the failure to a clean 404 rather than letting a 500 escape).
+  Note that a tenant-admin bypasses the tier check entirely, so the tier check alone never validates
+  the parent — this is exactly the hole Task 1 closes.
+- **Rename** — `manage` on the folder.
+- **Move** — `manage` on the folder **and** `edit` on the destination parent (you shouldn't be able to
+  move a folder somewhere you can't add content). Must reject: exceeding `MAX_FOLDER_DEPTH` *counting
+  the moved subtree's own height*, and any move into the folder's own descendant (cycle → see Task 1
+  for why this is not optional).
+- **Delete** — `manage`. **Deliberate MVP scope cut:** reject with a clear error when the folder has
+  any subfolder or any document. No folder-level recycle bin, no cascade delete — ADR-0006's deletion
+  machinery is document-scoped and there is no folder-level equivalent designed. Record this as an
+  explicit cut in the task report, not a silent gap.
 
-- [ ] Step 1: Design + write the move-with-descendant-path-update logic; add a `FoldersRepository`
-  method for it if the existing repository doesn't support it (check `folders.repository.ts` first —
-  don't add a new method if `move`-shaped logic already exists under a different name).
-- [ ] Step 2: TDD each route (create/rename/move/delete), including the depth/cycle/non-empty-delete
-  rejection cases.
-- [ ] Step 3: Full `apps/api` unit suite; commit.
+- [ ] **Step 1: `moveFolder` is the hard part** — moving a folder must rewrite `path` for the folder
+  **and every descendant**. No such method exists (`createFolder` computes `path` from a fresh parent
+  lookup, which does not generalize to re-parenting a subtree). Write it first, with a dedicated test
+  asserting a 3-level subtree's descendants all get corrected paths.
+- [ ] **Step 2: Exception filter.** `FolderLimitExceededError`, `FolderDepthExceededError` and Task 1's
+  `FolderParentNotFoundError` are currently caught by **nothing** — verified by grep, they appear only
+  in the repository and its spec, so they'd surface as raw 500s with no useful body. Map them
+  (409 / 400 / 404 respectively) following the existing `MulterExceptionFilter` precedent
+  (`apps/api/src/documents/multer-exception.filter.ts`): a `@Catch`-scoped filter applied via
+  `@UseFilters` on this controller, not a global filter.
+- [ ] Step 3: TDD all four routes, including every rejection case above.
+- [ ] Step 4: Full `apps/api` unit suite; commit.
 
 ```bash
-git add apps/api/src/folders/folders.controller.ts apps/api/src/folders/folders.controller.spec.ts libs/data/src/repositories/folders.repository.ts
-git commit -m "feat: FoldersController write routes (create/rename/move/delete)"
+git add apps/api/src/folders/ libs/data/src/repositories/folders.repository.ts libs/data/src/repositories/folders.repository.spec.ts
+git commit -m "feat: FoldersController write routes (create/rename/move/delete) + domain-error mapping"
 ```
 
 ---
 
-## Task 4: `FoldersController` — grant management + `permVersion` wiring + effective-permission preview
+## Task 5: Grants, `isPublic`, inheritance reset, `permVersion` wiring, effective-permission preview
 
 **Files:**
 - Modify: `apps/api/src/folders/folders.controller.ts` / `.spec.ts`
+- Modify: `libs/data/src/repositories/folders.repository.ts` (grant/isPublic mutation methods)
 
-**Interfaces:**
-- Consumes: `PermissionCache.bumpVersion(tenantId)` (**already exists**,
-  `libs/permissions/src/permission-cache.ts:51` — this is the task that finally calls it).
-- Produces: `POST /folders/:id/grants` (add/update a grant), `DELETE /folders/:id/grants` (revoke,
-  body-based per `RevokeFolderGrantRequestSchema` since DELETE-with-body is already how this codebase
-  would need to identify principalType+principalId — check if there's a query-param convention used
-  elsewhere in this codebase instead before defaulting to a body), `GET /folders/:id/effective-permission?userId=`.
+**Produces:** `POST /folders/:id/grants` (add/update), `DELETE /folders/:id/grants` (revoke),
+`POST /folders/:id/grants/inherit` (reset to inherited), `PATCH /folders/:id/public` (toggle
+`isPublic`), `GET /folders/:id/effective-permission?userId=`.
 
-**Behavior (ADR-0005 §Data Flow — "same operation" bump):**
-- Grant add/revoke, requires `manage` on the folder. Update `folders.grants` (and `hasExplicitGrants`
-  if this is the folder's first explicit grant — check the exact semantics against ADR-0005's step 2:
-  a folder only inherits when `hasExplicitGrants` is false; adding a grant to a previously-inheriting
-  folder must flip it to `true`, or the new grant would be silently ignored by the resolver) **and**
-  call `bumpVersion(tenantId)` in the same request — ADR-0005 describes this as "same Mongo session";
-  this codebase's repositories don't currently use Mongo transactions anywhere, so a strict
-  same-transaction guarantee may not be achievable without new infrastructure. If a real transaction
-  isn't feasible in the time this task has, do the grant write first, then the version bump,
-  and record the ordering choice + the accepted-risk window in the task report (grant persisted but
-  version-bump-failed is safe — a stale cache just means late propagation, not incorrect widening; the
-  reverse ordering — version bumped before the grant write commits — is the one to avoid, since it
-  would let a stale cache read serve *before* the actual data changes take effect). Also write the
-  `auditEvents` entry ADR-0005's data-flow table calls for.
-- `effective-permission` preview: `manage`-tier only (C3 admin screen), returns the target user's
-  deciding grant per folder (reuses whatever `DecidingGrant`-shaped output the resolver already
-  produces — check `types.ts`, don't invent a new shape).
+All mutating routes require `manage` on the folder. All of them bump `permVersion` and write an
+`auditEvents` entry (ADR-0005 §Data Flow).
 
-- [ ] Step 1: Confirm `hasExplicitGrants` flip semantics by reading `resolve-permissions.ts`'s step-2
-  handling directly, then TDD the grant-add/revoke routes including that flip case.
-- [ ] Step 2: Wire `bumpVersion`; write a test asserting it's called exactly once per grant mutation,
-  with the tenantId from scope (not from any request input).
+**The `hasExplicitGrants` semantics — get this exactly right, it's a silent-widening hazard:**
+
+`resolve-permissions.ts:46` — a folder inherits **only** when `hasExplicitGrants` is false. Therefore:
+
+- **Adding** the first grant to an inheriting folder must flip `hasExplicitGrants` to `true` in the
+  same write, or the resolver ignores the new grant entirely and the grant appears to do nothing.
+- **Revoking** the last grant must **not** flip it back to `false`. Per the schema comment and
+  ADR-0005, `true` + empty grants means *"authoritative, deny-all"*, which is a genuinely different
+  state from inheriting. Auto-reverting would silently convert a deliberate lockdown into "inherit
+  the parent's audience" — a silent permission **widening**, precisely the hazard ADR-0005's widening
+  badge exists to make visible.
+- Because of the above, resuming inheritance needs its **own explicit route** (`/grants/inherit`:
+  clears `grants` *and* sets `hasExplicitGrants: false`). This is a widening-capable operation in its
+  own right — bump + audit it like any other.
+
+**`permVersion` wiring** (`PermissionCache.bumpVersion`, `permission-cache.ts:51` — already
+implemented, currently dead code; this task is its first real caller): ADR-0005 specifies the bump
+happens in the same operation as the write. This codebase uses no Mongo transactions anywhere, so a
+true same-transaction guarantee needs infrastructure that doesn't exist. **Ordering rule if a
+transaction isn't feasible: write the grant first, bump second.** Grant-written-but-bump-failed is
+safe (a stale cache means late propagation, self-healing on the next bump or TTL). The reverse —
+bumping before the write commits — lets a fresh cache entry be built from *pre-change* data and then
+be treated as current, which is the genuinely dangerous ordering. Record whichever ordering ships,
+and its accepted-risk window, in the task report.
+
+**`effective-permission` preview** — `manage`-tier only (C3's "why can Dana see this?"). Reuse the
+resolver's existing `DecidingGrant` output (`libs/permissions/src/types.ts`); don't invent a shape.
+
+- [ ] Step 1: Repository methods for grant add/revoke/inherit-reset and `isPublic`, each keeping
+  `hasExplicitGrants` consistent per the rules above.
+- [ ] Step 2: TDD the routes. Required cases: first-grant flips `hasExplicitGrants`; revoking the last
+  grant leaves it `true` (deny-all preserved); `/grants/inherit` clears both; every mutation bumps
+  `permVersion` exactly once with the tenantId **from CLS scope, never from request input**; every
+  mutation writes an audit event.
 - [ ] Step 3: `effective-permission` route; TDD.
 - [ ] Step 4: Full `apps/api` unit suite; commit.
 
 ```bash
-git add apps/api/src/folders/folders.controller.ts apps/api/src/folders/folders.controller.spec.ts
-git commit -m "feat: folder grant management, permVersion cache invalidation, effective-permission preview"
+git add apps/api/src/folders/ libs/data/src/repositories/folders.repository.ts libs/data/src/repositories/folders.repository.spec.ts
+git commit -m "feat: folder grants, isPublic, inheritance reset, permVersion invalidation, effective-permission preview"
 ```
 
 ---
 
-## Task 5: `GroupsController` — CRUD + membership
+## Task 6: `GroupsController` — CRUD + membership
 
 **Files:**
-- Create: `apps/api/src/groups/groups.controller.ts`
-- Create: `apps/api/src/groups/groups.controller.spec.ts`
-- Modify: `apps/api/src/app.module.ts`
+- Create: `apps/api/src/groups/groups.controller.ts` / `.spec.ts`
+- Modify: `libs/data/src/repositories/groups.repository.ts`, `apps/api/src/app.module.ts`
 
-**Interfaces:**
-- Consumes: `GroupsRepository` (`.findAllForTenant`, `.findById` via base `ScopedRepository`, `.findForMember`
-  — all already exist). No `.create`/membership-update method currently exists on `GroupsRepository`
-  beyond the inherited `ScopedRepository.create`/`.updateOne` — check whether those are sufficient
-  as-is or whether a dedicated `addMembers`/`removeMembers` method is worth adding for atomicity
-  (`$addToSet`/`$pull` on `memberUserIds`, avoiding a read-modify-write race under concurrent
-  membership edits — `updateOne`'s raw `$set` on the whole array would lose concurrent edits).
-- Produces: `POST /groups`, `GET /groups`, `GET /groups/:id`, `PATCH /groups/:id/members`,
-  `DELETE /groups/:id`.
+**Produces:** `POST /groups`, `GET /groups`, `GET /groups/:id`, `PATCH /groups/:id/members`,
+`DELETE /groups/:id`.
 
-**Authorization:** create/membership-edit/delete are tenant-admin-only (`AdminOnlyGuard`, already
-used by `DocumentsController`'s recycle-bin routes and `TenantUsersAdminController` — reuse it, don't
-reinvent an admin check). `GET` (list/detail) is open to any authenticated tenant user — matches how
-`GroupsMembershipService.isMember` already treats groups as visible-if-a-member-or-admin, but a plain
-list/detail read doesn't need to be membership-gated the way events/tasks are, since group *names*
-existing isn't the sensitive part (their folder grants and calendar/kanban contents are, and those
-stay gated by their own controllers) — confirm this reasoning holds or gate reads too if it doesn't
-sit right against PRD §7's stated model.
+**Authorization:** create/membership-edit/delete are tenant-admin-only via the existing
+`AdminOnlyGuard` (verified reusable; its 403 is consistent with the precedent already set by
+`DocumentsController`'s recycle-bin routes and `TenantUsersAdminController` — the 404-not-403 rule
+governs hidden *resources*, not admin-only *actions*). `GET` list/detail is open to any authenticated
+tenant user: group names existing isn't the sensitive part, and their contents stay gated by their own
+controllers. Revisit if that reasoning doesn't hold up against PRD §7 on a closer read.
 
-**Delete**: reject if the group has any folder grants, calendar events, or kanban tasks referencing
-it (query `FoldersRepository`/`EventsRepository`/`TasksRepository` for any doc with this `groupId`/
-grant) — same "reject rather than cascade" MVP posture as folder delete in Task 3. Document as a
-deliberate scope cut, not silently assumed.
-
-- [ ] Step 1: Decide + implement the membership-update method (atomic `$addToSet`/`$pull` vs. the base
-  repository's methods) on `GroupsRepository`.
-- [ ] Step 2: TDD all 5 routes, including the delete-rejection-when-in-use cases (one test per
-  referencing entity type: has a folder grant, has an event, has a task).
-- [ ] Step 3: Register in `app.module.ts`; full `apps/api` unit suite; commit.
+- [ ] **Step 1: Atomic membership updates.** `GroupsRepository` has no create/membership methods —
+  only the inherited `ScopedRepository.create`/`.updateOne`. Add `addMembers`/`removeMembers` using
+  `$addToSet`/`$pull`, **not** a read-modify-write `$set` of the whole `memberUserIds` array, which
+  would silently drop concurrent edits.
+- [ ] **Step 2: Membership changes affect permission resolution** — a user's group membership is an
+  input to their principal set, so add/remove must bump `permVersion` and audit, exactly like a folder
+  grant change (ADR-0005 lists group changes as a bump trigger alongside grant changes). Easy to miss
+  because it lives in a different controller than Task 5's grants.
+- [ ] **Step 3: Delete-in-use rejection.** Reject deletion when the group holds any folder grant, or
+  owns any calendar event or kanban task (same reject-don't-cascade posture as folder delete). One
+  test per referencing entity type. Note the asymmetry with folders: a dangling *group* reference in a
+  grants array does **not** throw the resolver (it just never matches a principal), so this is orphan
+  hygiene rather than an outage risk — worth doing, but not the same severity as Task 1.
+- [ ] Step 4: TDD all five routes; register in `app.module.ts`; full `apps/api` unit suite; commit.
 
 ```bash
-git add apps/api/src/groups/groups.controller.ts apps/api/src/groups/groups.controller.spec.ts libs/data/src/repositories/groups.repository.ts apps/api/src/app.module.ts
-git commit -m "feat: GroupsController CRUD + membership management"
-```
-
----
-
-## Task 6: Regression + non-member/cross-tenant unit coverage, full workspace check
-
-**Files:**
-- Modify: `apps/api/src/folders/folders.controller.spec.ts`, `apps/api/src/groups/groups.controller.spec.ts`
-  (fill any gaps found in this pass, don't duplicate what Tasks 2-5 already covered)
-
-- [ ] Step 1: Audit both new controllers' spec files against the same coverage bar Phase 2A's
-  controllers hit: 404-not-403 on cross-tenant ids, 404 on a resource outside the caller's permitted
-  set (not just "doesn't exist"), non-admin rejected from admin-only routes, malformed/invalid request
-  bodies rejected with 400 (the Task-11 lesson — every new route needs at least one test proving the
-  zod schema actually rejects a bad body, not just that the happy path validates).
-- [ ] Step 2: `pnpm turbo run build lint test:unit` full workspace; fix anything red.
-- [ ] Step 3: Commit any fixes found in Step 1/2 as their own commit (don't fold into Task 5's commit
-  if Task 5 is already merged into the branch history by this point).
-
-```bash
-git add -A
-git commit -m "test: regression + cross-tenant/admin/validation coverage for folder+group management"
+git add apps/api/src/groups/groups.controller.ts apps/api/src/groups/groups.controller.spec.ts \
+  libs/data/src/repositories/groups.repository.ts libs/data/src/repositories/groups.repository.spec.ts apps/api/src/app.module.ts
+git commit -m "feat: GroupsController CRUD + atomic membership management"
 ```
 
 ---
 
 ## Task 7: Final whole-branch review + finish
 
-Matches Phase 2A's own Task 11 precedent — run a full-branch code review (`/code-review main...<branch>`)
-before merge, triage findings directly against the actual code (not blindly trusting a sub-agent
-verdict — Phase 2A's own review run had reliability problems worth remembering), apply justified
-fixes, re-verify with a full workspace check, then report merge-readiness.
+Mirrors Phase 2A's Task 11.
 
-- [ ] Step 1: Full-branch review.
-- [ ] Step 2: Triage + fix findings.
-- [ ] Step 3: Full `pnpm turbo run build lint test:unit` workspace check.
+- [ ] Step 1: Full-branch review (`/code-review main...<branch>`). **Use `--level medium`** — Phase 2A's
+  `--level high` run stalled for 90+ minutes re-verifying the diff and had to be killed, and the
+  medium run found four real, confirmed issues in ~16 minutes.
+- [ ] Step 2: Triage findings **against the actual code**, not by trusting the reviewer's verdict
+  channel — Phase 2A's run also had its final report collapse to a single "." twice, and the findings
+  had to be recovered from the run transcript.
+- [ ] Step 3: Apply justified fixes; re-run the full workspace check.
 - [ ] Step 4: Update `docs/plans/implementation-phases-11-07-2026-plan.md`'s Phase 2 checklist
-  (2.1b/2.2b → DONE) and this plan's own status header.
-- [ ] Step 5: Report merge-readiness; merging itself is the user's call, same as Phase 2A.
+  (2.1b/2.2b → DONE) and this plan's status header.
+- [ ] Step 5: Report merge-readiness. Merging is the user's call, same as Phase 2A.
 
 ---
 
-## Explicitly out of scope for this plan (deferred to a follow-on plan)
+## Explicitly out of scope (deferred to a follow-on plan)
 
-- **2.6 UI**: folder tree/browser, upload progress, permission-management screens, group screens
-  (UI spec B2/C2/C3). Needs this plan's API surface to exist first.
-- **2.7 tests**: the permission-matrix integration suite (inheritance/override/public/widening),
-  populating `test/cross-tenant/`'s still-empty harness, signed-URL expiry/tamper tests. This plan's
-  Task 6 only adds unit-level coverage matching Phase 2A's own per-task discipline — the bigger,
-  dedicated integration-test effort (mirroring Phase 2A's own Task 9, which had to build the
-  `mongodb-memory-server`/`ioredis-mock` harness from scratch) is a separate plan.
-- Tenant-offboarding deletion certificate (PRD §14) — `portal-api`/tenant-lifecycle scope, not this
-  plan's folder/group management surface.
-- Folder-level recycle bin / cascade delete for folders-in-use or groups-in-use — deliberately
-  rejected rather than built (Tasks 3 and 5's delete routes).
+- **2.6 UI** — folder browser, upload progress, permission-management and group screens (B2/C2/C3).
+  Needs this plan's API to exist first.
+- **2.7 integration tests** — the permission-matrix suite (inheritance/override/public/widening),
+  populating the still-empty `test/cross-tenant/` harness, signed-URL expiry/tamper tests. Per-task
+  unit coverage here is not a substitute; that effort mirrors Phase 2A's Task 9 (which had to build
+  the `mongodb-memory-server` + `ioredis-mock` harness from scratch — it now exists and is reusable).
+- Tenant-offboarding deletion certificate (PRD §14) — `portal-api`/tenant-lifecycle scope.
+- Folder-level recycle bin / cascade delete, and group-delete cascade — deliberately rejected in
+  favor of reject-when-in-use (Tasks 4 and 6).
+- Cleaning up dangling grants/memberships when a **user** is deactivated — pre-existing gap in
+  `TenantUsersAdminController`, noticed during this audit, unrelated to the routes built here.
 
 ## Self-Review Notes
 
-- **Spec grounding:** every route's authorization tier traces to a specific ADR-0005 sentence (quoted
-  inline per task) rather than invented — this plan does not introduce new authorization semantics.
-- **Known unknowns flagged, not guessed:** the move-with-descendant-path-update mechanics (Task 3),
-  the `hasExplicitGrants` flip-on-first-grant semantics (Task 4), and whether widening info is already
-  computed by the resolver (Task 2) are all explicitly marked "read the actual code before assuming"
-  rather than described as settled — matching the pattern that worked well in Phase 2A's own Task 8/9
-  briefs.
-- **Validation from the start:** every new route validates its request body via a `libs/contracts`
-  zod schema (Task 1), directly addressing the gap Phase 2A's Task 11 review found in its own
-  controllers, rather than repeating it here and fixing it later.
+- **Every authorization tier traces to a quoted ADR-0005 line**, not invention. This plan introduces
+  no new authorization semantics — except the `hasExplicitGrants`-on-revoke rule in Task 5, which is
+  an interpretation the ADR implies but never states outright, and is flagged as such.
+- **Assumptions were verified, not deferred.** The first draft's three "check before assuming" flags
+  were all resolved against the code before this revision; their answers are embedded above with
+  file:line references so the implementer doesn't re-derive them.
+- **Task 1 exists because of a real, reachable-by-this-plan outage path**, not defensive
+  speculation — the exact throw/no-catch chain is cited so the implementer can confirm it in minutes
+  rather than take it on faith.
+- **Known remaining unknown:** whether fail-closed-per-folder (Task 1 Step 2) is the right call versus
+  keeping the loud throw. Both sides are argued in the task; the implementer decides with the code in
+  front of them and records the choice.
