@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { FoldersRepository } from './folders.repository';
-import { FolderDepthExceededError, FolderLimitExceededError, FolderParentNotFoundError } from '../errors';
+import { FolderCycleError, FolderDepthExceededError, FolderLimitExceededError, FolderParentNotFoundError } from '../errors';
 import { SCOPE_CLS_KEY, Scope } from '../scope';
 import { MAX_FOLDER_DEPTH, MAX_FOLDERS_PER_TENANT } from '../models/folder.schema';
 
@@ -21,7 +21,16 @@ function makeModel() {
     findOne: jest.fn(),
     countDocuments: jest.fn(),
     create: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
   };
+}
+
+/** findOne, keyed by _id, so moveFolder's several sequential findById calls each get the right fixture. */
+function byIdMock(model: ReturnType<typeof makeModel>, docs: Array<{ _id: Types.ObjectId }>) {
+  model.findOne.mockImplementation((query: any) => {
+    const doc = docs.find((d) => d._id.equals(query._id));
+    return Promise.resolve(doc ?? null);
+  });
 }
 
 describe('FoldersRepository', () => {
@@ -110,5 +119,102 @@ describe('FoldersRepository', () => {
 
     expect(model.create).toHaveBeenCalledWith(expect.objectContaining({ path: [], parentId: null }));
     expect(model.findOne).not.toHaveBeenCalled();
+  });
+
+  describe('renameFolder', () => {
+    it('sets the name and returns the updated folder', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      model.findOne.mockResolvedValue({ _id: id, name: 'New name' });
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      const result = await repo.renameFolder(id, 'New name');
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { name: 'New name' } });
+      expect(result?.name).toBe('New name');
+    });
+  });
+
+  describe('moveFolder (Phase 2 plan Task 4 — "the hard part")', () => {
+    it('rejects moving a folder into itself', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      byIdMock(model, [{ _id: id, path: [] } as any]);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await expect(repo.moveFolder(id, id)).rejects.toThrow(FolderCycleError);
+      expect(model.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects moving a folder into one of its own descendants', async () => {
+      const model = makeModel();
+      const root = { _id: new Types.ObjectId(), path: [] };
+      const child = { _id: new Types.ObjectId(), path: [root._id] };
+      byIdMock(model, [root, child] as any);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await expect(repo.moveFolder(root._id, child._id)).rejects.toThrow(FolderCycleError);
+      expect(model.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a destination that does not resolve in the tenant', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      byIdMock(model, [{ _id: id, path: [] } as any]);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await expect(repo.moveFolder(id, new Types.ObjectId())).rejects.toThrow(FolderParentNotFoundError);
+      expect(model.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the moved subtree would exceed MAX_FOLDER_DEPTH, even though the folder itself would not', async () => {
+      // A shallow folder can still bust the bound via a deep descendant — the check must look at
+      // the whole subtree's max path length, not just the folder being moved.
+      const model = makeModel();
+      const shallowFolder = { _id: new Types.ObjectId(), path: [] };
+      const deepPath = Array.from({ length: MAX_FOLDER_DEPTH - 1 }, () => new Types.ObjectId());
+      const deepDescendant = { _id: new Types.ObjectId(), path: [...deepPath, shallowFolder._id] };
+      const destination = { _id: new Types.ObjectId(), path: Array.from({ length: MAX_FOLDER_DEPTH - 2 }, () => new Types.ObjectId()) };
+      byIdMock(model, [shallowFolder, destination] as any);
+      model.find.mockResolvedValue([deepDescendant]);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await expect(repo.moveFolder(shallowFolder._id, destination._id)).rejects.toThrow(FolderDepthExceededError);
+      expect(model.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('rewrites the path of every descendant across a 3-level subtree when the moved folder changes ancestors', async () => {
+      const root = { _id: new Types.ObjectId(), path: [] };
+      const mid = { _id: new Types.ObjectId(), path: [root._id] };
+      const moved = { _id: new Types.ObjectId(), path: [root._id, mid._id] };
+      const childA = { _id: new Types.ObjectId(), path: [root._id, mid._id, moved._id] };
+      const grandchildA = { _id: new Types.ObjectId(), path: [root._id, mid._id, moved._id, childA._id] };
+      const newParent = { _id: new Types.ObjectId(), path: [] };
+
+      const model = makeModel();
+      byIdMock(model, [root, mid, moved, childA, grandchildA, newParent] as any);
+      model.find.mockResolvedValue([childA, grandchildA]);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.moveFolder(moved._id, newParent._id);
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: moved._id }), { $set: { parentId: newParent._id, path: [newParent._id] } });
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: childA._id }), { $set: { path: [newParent._id, moved._id] } });
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: grandchildA._id }), {
+        $set: { path: [newParent._id, moved._id, childA._id] },
+      });
+    });
+
+    it('moving to root (null) clears path entirely', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      byIdMock(model, [{ _id: id, path: [new Types.ObjectId(), new Types.ObjectId()] }] as any);
+      model.find.mockResolvedValue([]);
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.moveFolder(id, null);
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { parentId: null, path: [] } });
+    });
   });
 });

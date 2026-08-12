@@ -1,6 +1,35 @@
-import { BadRequestException, Controller, Get, Inject, NotFoundException, Param, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseFilters,
+} from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { FolderDocument, FoldersRepository, GroupsRepository, SCOPE_CLS_KEY, Scope } from '@kms/data';
+import {
+  CreateFolderRequestSchema,
+  MoveFolderRequestSchema,
+  RenameFolderRequestSchema,
+} from '@kms/contracts';
+import {
+  DocumentsRepository,
+  FolderDocument,
+  FolderNotEmptyError,
+  FoldersRepository,
+  GroupsRepository,
+  SCOPE_CLS_KEY,
+  Scope,
+  toObjectId,
+} from '@kms/data';
 import {
   FolderPermissionResolution,
   FolderWideningInfo,
@@ -11,6 +40,7 @@ import {
   toPrincipalSet,
 } from '@kms/permissions';
 import { PERMISSION_CACHE } from '../redis.provider';
+import { FolderExceptionFilter } from './folder-exception.filter';
 
 const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
 
@@ -33,11 +63,13 @@ interface FolderSummary {
  * existed and was already correct; this controller is wiring, not new logic.
  */
 @Controller('folders')
+@UseFilters(FolderExceptionFilter)
 export class FoldersController {
   constructor(
     private readonly cls: ClsService,
     private readonly folders: FoldersRepository,
     private readonly groups: GroupsRepository,
+    private readonly documents: DocumentsRepository,
     @Inject(PERMISSION_CACHE) private readonly cache: PermissionCache,
   ) {}
 
@@ -83,6 +115,106 @@ export class FoldersController {
       ...summary,
       grants: folder.grants.map((g) => ({ principalType: g.principalType, principalId: g.principalId.toString(), access: g.access })),
     };
+  }
+
+  @Post()
+  @HttpCode(201)
+  async create(@Body() body: unknown) {
+    const { parentId, name } = CreateFolderRequestSchema.parse(body);
+    const scope = this.currentScope();
+
+    if (parentId === null) {
+      // No parent to hold an `edit` grant — creating a root folder is a tenant-admin action, not a
+      // hidden-resource case, so this is a real 403 rather than the usual 404-on-denial convention.
+      if (scope.role !== 'admin') throw new ForbiddenException();
+      const created = await this.folders.createFolder({ name, parentId: null });
+      return this.toCreatedSummary(created);
+    }
+
+    const allFolders = await this.folders.findAllForTenant();
+    const resolution = await this.resolveForCaller(scope, allFolders);
+    // Not in permittedEdit covers both "doesn't exist" and "caller can't add content here" —
+    // FoldersRepository.createFolder's own FolderParentNotFoundError is the defense-in-depth
+    // backstop behind this, not the primary check (Task 1).
+    if (!resolution.permittedEdit.includes(parentId)) throw new NotFoundException();
+
+    const created = await this.folders.createFolder({ name, parentId: toObjectId(parentId) });
+    return this.toCreatedSummary(created);
+  }
+
+  @Patch(':id')
+  async rename(@Param('id') id: string, @Body() body: unknown) {
+    const { name } = RenameFolderRequestSchema.parse(body);
+    await this.requireTier(id, 'manage');
+    const updated = await this.folders.renameFolder(toObjectId(id), name);
+    if (!updated) throw new NotFoundException();
+    return { id, name: updated.name };
+  }
+
+  @Patch(':id/move')
+  async move(@Param('id') id: string, @Body() body: unknown) {
+    const { parentId } = MoveFolderRequestSchema.parse(body);
+    const { folder } = await this.requireTier(id, 'manage');
+    const scope = this.currentScope();
+
+    if (parentId === null) {
+      // Moving to root is structurally the same act as creating at root — no parent to hold an
+      // `edit` grant, so it's the same tenant-admin-only rule as create(), not a hidden-resource case.
+      if (scope.role !== 'admin') throw new ForbiddenException();
+    } else {
+      // The destination must be somewhere the caller can add content — moving into a folder they
+      // can't edit would let them park content somewhere they couldn't have created it directly.
+      const allFolders = await this.folders.findAllForTenant();
+      const resolution = await this.resolveForCaller(scope, allFolders);
+      if (!resolution.permittedEdit.includes(parentId)) throw new NotFoundException();
+    }
+
+    const moved = await this.folders.moveFolder(folder._id, parentId ? toObjectId(parentId) : null);
+    return { id, parentId: moved.parentId ? moved.parentId.toString() : null };
+  }
+
+  @Delete(':id')
+  @HttpCode(200)
+  async remove(@Param('id') id: string) {
+    const { folder } = await this.requireTier(id, 'manage');
+
+    // Deliberate MVP scope cut (Phase 2 plan Task 4): no folder-level recycle bin or cascade
+    // delete — ADR-0006's deletion machinery is document-scoped, there is no folder-level
+    // equivalent designed. Reject rather than silently orphan or cascade.
+    const [children, containedDocuments] = await Promise.all([
+      this.folders.findChildren(folder._id),
+      this.documents.findByFolder(folder._id),
+    ]);
+    if (children.length > 0 || containedDocuments.length > 0) throw new FolderNotEmptyError();
+
+    await this.folders.deleteOne({ _id: folder._id });
+    return { deleted: true };
+  }
+
+  private toCreatedSummary(folder: FolderDocument) {
+    return {
+      id: folder._id.toString(),
+      name: folder.name,
+      parentId: folder.parentId ? folder.parentId.toString() : null,
+      hasExplicitGrants: folder.hasExplicitGrants,
+      isPublic: folder.isPublic,
+    };
+  }
+
+  /** 404s on: malformed id, nonexistent folder, or a folder the caller can't reach at `tier`. */
+  private async requireTier(id: string, tier: 'edit' | 'manage'): Promise<{ folder: FolderDocument }> {
+    if (!OBJECT_ID_RE.test(id)) throw new NotFoundException();
+
+    const scope = this.currentScope();
+    const allFolders = await this.folders.findAllForTenant();
+    const folder = allFolders.find((f) => f._id.toString() === id);
+    if (!folder) throw new NotFoundException();
+
+    const resolution = await this.resolveForCaller(scope, allFolders);
+    const permittedSet = tier === 'manage' ? resolution.permittedManage : resolution.permittedEdit;
+    if (!permittedSet.includes(id)) throw new NotFoundException();
+
+    return { folder };
   }
 
   private parseParentIdParam(parentIdParam: string | undefined): string | null {

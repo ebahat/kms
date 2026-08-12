@@ -42,3 +42,19 @@ export class FolderParentNotFoundError extends Error {
     this.name = 'FolderParentNotFoundError';
   }
 }
+
+/** A folder cannot be moved into itself or into one of its own descendants. */
+export class FolderCycleError extends Error {
+  constructor() {
+    super('A folder cannot be moved into itself or one of its own subfolders.');
+    this.name = 'FolderCycleError';
+  }
+}
+
+/** Phase 2 plan Task 4 — no folder-level recycle bin/cascade delete; a folder must be empty first. */
+export class FolderNotEmptyError extends Error {
+  constructor() {
+    super('This folder still contains subfolders or documents. Remove them before deleting the folder.');
+    this.name = 'FolderNotEmptyError';
+  }
+}
