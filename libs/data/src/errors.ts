@@ -29,3 +29,16 @@ export class FolderDepthExceededError extends Error {
     this.name = 'FolderDepthExceededError';
   }
 }
+
+/**
+ * Phase 2 plan Task 1: a parentId that doesn't resolve inside the caller's
+ * tenant (nonexistent, or belonging to another tenant) must never be stored —
+ * a dangling parentId breaks ADR-0005's resolver for the whole tenant, not
+ * just the one folder (see resolveFolderPermissions's cycle/orphan handling).
+ */
+export class FolderParentNotFoundError extends Error {
+  constructor() {
+    super('The specified parent folder does not exist.');
+    this.name = 'FolderParentNotFoundError';
+  }
+}

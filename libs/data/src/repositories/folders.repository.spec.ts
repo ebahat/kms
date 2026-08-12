@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { FoldersRepository } from './folders.repository';
-import { FolderDepthExceededError, FolderLimitExceededError } from '../errors';
+import { FolderDepthExceededError, FolderLimitExceededError, FolderParentNotFoundError } from '../errors';
 import { SCOPE_CLS_KEY, Scope } from '../scope';
 import { MAX_FOLDER_DEPTH, MAX_FOLDERS_PER_TENANT } from '../models/folder.schema';
 
@@ -83,6 +83,20 @@ describe('FoldersRepository', () => {
 
     const repo = new FoldersRepository(model as any, cls as any);
     await expect(repo.createFolder({ name: 'toodeep', parentId })).rejects.toThrow(FolderDepthExceededError);
+    expect(model.create).not.toHaveBeenCalled();
+  });
+
+  it('createFolder rejects a parentId that does not resolve in the tenant, without ever inserting', async () => {
+    // findById is tenant-scoped (ScopedRepository) — a null result here covers both "parentId doesn't
+    // exist at all" and "parentId belongs to another tenant" identically, since the scoped query
+    // can't distinguish them and shouldn't (Phase 2 plan Task 1 — a dangling parentId must never be
+    // stored, it breaks ADR-0005's resolver for the whole tenant, not just this folder).
+    const model = makeModel();
+    model.countDocuments.mockResolvedValue(0);
+    model.findOne.mockResolvedValue(null);
+
+    const repo = new FoldersRepository(model as any, cls as any);
+    await expect(repo.createFolder({ name: 'x', parentId: new Types.ObjectId() })).rejects.toThrow(FolderParentNotFoundError);
     expect(model.create).not.toHaveBeenCalled();
   });
 

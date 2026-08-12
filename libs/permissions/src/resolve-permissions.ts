@@ -23,6 +23,9 @@ interface EffectiveBundle {
  * Memoized recursion reaches the same result as an explicit depth-first sort
  * (ADR-0005 step 1) without needing one.
  */
+/** Deny-all: no grants, not public. Used when a folder's parent chain is broken (see resolve() below). */
+const ORPHAN_BUNDLE: EffectiveBundle = { grants: [], isPublic: false };
+
 function computeEffectiveBundles(folders: FolderInput[]): Map<string, EffectiveBundle> {
   const byId = new Map(folders.map((f) => [f.id, f]));
   const effective = new Map<string, EffectiveBundle>();
@@ -34,11 +37,17 @@ function computeEffectiveBundles(folders: FolderInput[]): Map<string, EffectiveB
 
     const folder = byId.get(folderId);
     if (!folder) {
-      throw new Error(
-        `resolveFolderPermissions: folder "${folderId}" is referenced as a parent but was not in the input set — callers must pass the full tenant folder list (ADR-0005).`,
-      );
+      // A parentId that doesn't resolve inside the input set (corrupt/dangling data — the repository
+      // layer rejects this at write time as of Phase 2 plan Task 1, but this function must still fail
+      // safe against any row that predates that fix, or a caller bug elsewhere). Fail closed for this
+      // folder's subtree alone rather than throwing and aborting resolution for the entire tenant —
+      // an orphan grants nothing, which is exactly the safe interpretation, and every other folder in
+      // the tenant keeps resolving normally.
+      return ORPHAN_BUNDLE;
     }
     if (inProgress.has(folderId)) {
+      // A cycle, unlike an orphan, is unambiguously a bug (a folder cannot legitimately be its own
+      // ancestor) — this stays a hard failure rather than a fail-closed degrade.
       throw new Error(`resolveFolderPermissions: cycle detected in folder parent chain at "${folderId}".`);
     }
 
@@ -127,7 +136,11 @@ export function computeFolderWidening(folders: FolderInput[]): Map<string, Folde
     }
 
     const ownKeys = readPrincipalKeys(effectiveBundles.get(folder.id)!);
-    const parentKeys = readPrincipalKeys(effectiveBundles.get(folder.parentId)!);
+    // Unlike folder.id (always a real input folder, always cached by the loop in
+    // computeEffectiveBundles), folder.parentId can itself be a dangling reference that never got
+    // cached (resolve()'s orphan branch returns early without a cache write) — fall back to the same
+    // deny-all bundle rather than a non-null assertion that would crash on a legitimately-missing key.
+    const parentKeys = readPrincipalKeys(effectiveBundles.get(folder.parentId) ?? ORPHAN_BUNDLE);
     // A public parent's audience is already "everyone" — no named grant on a child can be broader
     // than that, even though its principal key literally differs from '*'.
     const addedKeys = parentKeys.has('*') ? [] : [...ownKeys].filter((key) => !parentKeys.has(key));

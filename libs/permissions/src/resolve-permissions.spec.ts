@@ -122,8 +122,25 @@ describe('resolveFolderPermissions (ADR-0005)', () => {
     expect(result.decidingGrant.get('f1')).toEqual({ tier: 'manage', via: { principalType: 'user', principalId: userId } });
   });
 
-  it('throws if a folder references a parent that is not in the input set', () => {
-    expect(() => resolveFolderPermissions([folder('orphan', 'missing-parent')], principals)).toThrow(/not in the input set/);
+  it('fails closed (not throws) when a folder references a parent that is not in the input set — the folder gets no access rather than aborting resolution', () => {
+    const result = resolveFolderPermissions([folder('orphan', 'missing-parent')], principals);
+    expect(result.permittedRead).toEqual([]);
+    expect(result.decidingGrant.has('orphan')).toBe(false);
+  });
+
+  it('an orphaned folder does not take down resolution for the rest of the tenant', () => {
+    const folders = [
+      folder('orphan', 'missing-parent'),
+      folder('healthy', null, { hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'read' }] }),
+    ];
+    const result = resolveFolderPermissions(folders, principals);
+    expect(result.permittedRead).toEqual(['healthy']);
+  });
+
+  it('a folder inheriting from an orphaned parent also gets no access (deny-all propagates down the subtree)', () => {
+    const folders = [folder('orphan', 'missing-parent'), folder('child-of-orphan', 'orphan')];
+    const result = resolveFolderPermissions(folders, principals);
+    expect(result.permittedRead).toEqual([]);
   });
 
   it('throws on a cyclic parent chain instead of infinite-looping', () => {
@@ -211,5 +228,17 @@ describe('computeFolderWidening (ADR-0005, amended 2026-07-19)', () => {
     const info = computeFolderWidening(folders).get('child')!;
     expect(info.broaderThanParent).toBe(false);
     expect(info.becamePublic).toBe(false);
+  });
+
+  it('does not crash when a folder with its own explicit grants points at a dangling parentId — the parent side treats as deny-all', () => {
+    // hasExplicitGrants: true means this folder never inherits, so computeEffectiveBundles never
+    // even visits "missing-parent" via its own resolve() recursion — a different path to the same
+    // missing-map-key hazard the orphan case hits, both must be safe against the bare `!` lookup.
+    const folders = [
+      folder('child', 'missing-parent', { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupA, access: 'read' }] }),
+    ];
+    const info = computeFolderWidening(folders).get('child')!;
+    expect(info.broaderThanParent).toBe(true); // any grant is broader than a deny-all (nonexistent) parent
+    expect(info.addedGroups).toEqual([groupA]);
   });
 });

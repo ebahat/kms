@@ -4,7 +4,7 @@ import { ClsService } from 'nestjs-cls';
 import { Model, Types } from 'mongoose';
 import { ScopedRepository } from '../scoped-repository';
 import { Folder, FolderDocument, MAX_FOLDER_DEPTH, MAX_FOLDERS_PER_TENANT } from '../models/folder.schema';
-import { FolderDepthExceededError, FolderLimitExceededError } from '../errors';
+import { FolderDepthExceededError, FolderLimitExceededError, FolderParentNotFoundError } from '../errors';
 
 @Injectable()
 export class FoldersRepository extends ScopedRepository<Folder> {
@@ -28,8 +28,12 @@ export class FoldersRepository extends ScopedRepository<Folder> {
 
     let path: Types.ObjectId[] = [];
     if (doc.parentId) {
+      // Tenant-scoped lookup (ScopedRepository.findById) — this also rejects a parentId belonging
+      // to another tenant, not just a nonexistent one. A dangling parentId must never be stored:
+      // it breaks ADR-0005's resolver for the whole tenant, not just this folder (Phase 2 plan Task 1).
       const parent = await this.findById(doc.parentId);
-      path = parent ? [...parent.path, parent._id] : [];
+      if (!parent) throw new FolderParentNotFoundError();
+      path = [...parent.path, parent._id];
     }
     if (path.length >= MAX_FOLDER_DEPTH) throw new FolderDepthExceededError(MAX_FOLDER_DEPTH);
 
