@@ -9,3 +9,5 @@ export * from './auth-dto';
 export * from './user-admin-dto';
 export * from './tenant-admin-dto';
 export * from './document-dto';
+export * from './folder-dto';
+export * from './group-dto';
