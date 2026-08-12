@@ -43,6 +43,7 @@ import {
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
 import { TenantUsersAdminController } from './tenant-admin/tenant-users-admin.controller';
+import { FoldersController } from './folders/folders.controller';
 import { DocumentsController } from './documents/documents.controller';
 import { DocumentsPermissionsService } from './documents/documents-permissions.service';
 import { EventsController } from './groups/events.controller';
@@ -96,6 +97,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     HealthController,
     AuthController,
     TenantUsersAdminController,
+    FoldersController,
     DocumentsController,
     EventsController,
     TasksController,
