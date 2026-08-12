@@ -17,10 +17,14 @@ import {
 import { ClsService } from 'nestjs-cls';
 import {
   CreateFolderRequestSchema,
+  FolderGrantRequestSchema,
   MoveFolderRequestSchema,
   RenameFolderRequestSchema,
+  RevokeFolderGrantRequestSchema,
+  SetFolderPublicRequestSchema,
 } from '@kms/contracts';
 import {
+  AuditEventsRepository,
   DocumentsRepository,
   FolderDocument,
   FolderNotEmptyError,
@@ -35,6 +39,7 @@ import {
   FolderWideningInfo,
   PermissionCache,
   computeFolderWideningCached,
+  resolveFolderPermissions,
   resolveFolderPermissionsCached,
   toFolderInputs,
   toPrincipalSet,
@@ -70,6 +75,7 @@ export class FoldersController {
     private readonly folders: FoldersRepository,
     private readonly groups: GroupsRepository,
     private readonly documents: DocumentsRepository,
+    private readonly auditEvents: AuditEventsRepository,
     @Inject(PERMISSION_CACHE) private readonly cache: PermissionCache,
   ) {}
 
@@ -189,6 +195,124 @@ export class FoldersController {
 
     await this.folders.deleteOne({ _id: folder._id });
     return { deleted: true };
+  }
+
+  @Post(':id/grants')
+  async addGrant(@Param('id') id: string, @Body() body: unknown) {
+    const grant = FolderGrantRequestSchema.parse(body);
+    await this.requireTier(id, 'manage');
+
+    const updated = await this.folders.upsertGrant(toObjectId(id), { ...grant, principalId: toObjectId(grant.principalId) });
+    if (!updated) throw new NotFoundException();
+    await this.bumpVersionAndAudit(id, 'folder.grant.added', grant);
+
+    return this.grantsResponse(updated);
+  }
+
+  @Delete(':id/grants')
+  @HttpCode(200)
+  async revokeGrant(@Param('id') id: string, @Body() body: unknown) {
+    const { principalType, principalId } = RevokeFolderGrantRequestSchema.parse(body);
+    await this.requireTier(id, 'manage');
+
+    const updated = await this.folders.revokeGrant(toObjectId(id), principalType, toObjectId(principalId));
+    if (!updated) throw new NotFoundException();
+    await this.bumpVersionAndAudit(id, 'folder.grant.revoked', { principalType, principalId });
+
+    return this.grantsResponse(updated);
+  }
+
+  @Post(':id/grants/inherit')
+  @HttpCode(200)
+  async resetToInherited(@Param('id') id: string) {
+    await this.requireTier(id, 'manage');
+
+    const updated = await this.folders.resetToInherited(toObjectId(id));
+    if (!updated) throw new NotFoundException();
+    // Resuming inheritance is widening-capable in its own right (the parent's audience could be
+    // broader than this folder's override was) — bump + audit like any other grant mutation.
+    await this.bumpVersionAndAudit(id, 'folder.grants.resetToInherited', {});
+
+    return this.grantsResponse(updated);
+  }
+
+  @Patch(':id/public')
+  async setPublic(@Param('id') id: string, @Body() body: unknown) {
+    const { isPublic } = SetFolderPublicRequestSchema.parse(body);
+    await this.requireTier(id, 'manage');
+
+    const updated = await this.folders.setPublic(toObjectId(id), isPublic);
+    if (!updated) throw new NotFoundException();
+    await this.bumpVersionAndAudit(id, 'folder.public.changed', { isPublic });
+
+    return this.grantsResponse(updated);
+  }
+
+  /**
+   * ADR-0005's C3 "why can Dana see this?" preview — manage-tier only.
+   * Reuses the resolver's own DecidingGrant output rather than inventing a
+   * shape. Computed directly (not via the cached path), since this is a
+   * one-off preview for an arbitrary target user, not the querying user's
+   * own request — caching by "some other user's id" would just add cache
+   * entries for a low-frequency admin action.
+   *
+   * Known limitation, not modeled here: if the target user is themselves a
+   * tenant admin, this shows their plain resolved grants (often none) —
+   * their real access comes from the caller-side admin bypass
+   * (GroupsMembershipService/DocumentsPermissionsService's own rule), which
+   * has no representation in the grants-based resolver this preview reads.
+   */
+  @Get(':id/effective-permission')
+  async effectivePermission(@Param('id') id: string, @Query('userId') targetUserId?: string) {
+    await this.requireTier(id, 'manage');
+    if (!targetUserId || !OBJECT_ID_RE.test(targetUserId)) throw new BadRequestException('userId query param is required');
+
+    const allFolders = await this.folders.findAllForTenant();
+    const targetMemberGroups = await this.groups.findForMember(toObjectId(targetUserId));
+    const folders = toFolderInputs(allFolders);
+    const principals = toPrincipalSet(targetUserId, targetMemberGroups);
+    const resolution = resolveFolderPermissions(folders, principals);
+
+    const tier: 'read' | 'edit' | 'manage' | null = resolution.permittedManage.includes(id)
+      ? 'manage'
+      : resolution.permittedEdit.includes(id)
+        ? 'edit'
+        : resolution.permittedRead.includes(id)
+          ? 'read'
+          : null;
+
+    return { userId: targetUserId, folderId: id, tier, decidingGrant: resolution.decidingGrant.get(id) ?? null };
+  }
+
+  private grantsResponse(folder: FolderDocument) {
+    return {
+      id: folder._id.toString(),
+      hasExplicitGrants: folder.hasExplicitGrants,
+      isPublic: folder.isPublic,
+      grants: folder.grants.map((g) => ({ principalType: g.principalType, principalId: g.principalId.toString(), access: g.access })),
+    };
+  }
+
+  /**
+   * ADR-0005's data-flow: bump `permVersion` in the same operation as the
+   * grant write. This codebase uses no Mongo transactions, so the write
+   * happens first and the bump second, best-effort: a grant that's written
+   * but whose bump fails is safe (a stale cache just means late
+   * propagation, self-healing on the next successful bump or the cache's
+   * own TTL) — the reverse ordering would let a cache entry be built from
+   * pre-change data and then be served as current, which is the genuinely
+   * dangerous direction. The audit write is NOT best-effort (matches every
+   * other controller's `auditEvents.record` usage in this codebase) — a
+   * failure there fails the request.
+   */
+  private async bumpVersionAndAudit(folderId: string, action: string, metadata: Record<string, unknown>): Promise<void> {
+    const scope = this.currentScope();
+    try {
+      await this.cache.bumpVersion(scope.tenantId.toString());
+    } catch {
+      // Best-effort — see method doc. A failed bump here is a stale-cache risk, not a correctness bug.
+    }
+    await this.auditEvents.record({ action, targetId: toObjectId(folderId), metadata });
   }
 
   private toCreatedSummary(folder: FolderDocument) {

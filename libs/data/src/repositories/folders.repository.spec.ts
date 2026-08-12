@@ -217,4 +217,93 @@ describe('FoldersRepository', () => {
       expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { parentId: null, path: [] } });
     });
   });
+
+  describe('upsertGrant (Phase 2 plan Task 5)', () => {
+    it('flips hasExplicitGrants to true on the first grant added to an inheriting folder', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      const principalId = new Types.ObjectId();
+      model.findOne.mockResolvedValue({ _id: id, hasExplicitGrants: false, grants: [] });
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.upsertGrant(id, { principalType: 'user', principalId, access: 'edit' });
+
+      expect(model.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: id }),
+        { $set: { grants: [{ principalType: 'user', principalId, access: 'edit' }], hasExplicitGrants: true } },
+      );
+    });
+
+    it('replaces an existing grant for the same principal rather than duplicating it', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      const principalId = new Types.ObjectId();
+      model.findOne.mockResolvedValue({
+        _id: id,
+        hasExplicitGrants: true,
+        grants: [{ principalType: 'user', principalId, access: 'read' }],
+      });
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.upsertGrant(id, { principalType: 'user', principalId, access: 'manage' });
+
+      expect(model.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: id }),
+        { $set: { grants: [{ principalType: 'user', principalId, access: 'manage' }], hasExplicitGrants: true } },
+      );
+    });
+  });
+
+  describe('revokeGrant', () => {
+    it('removes the grant but does not flip hasExplicitGrants back to false, even when grants become empty', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+      const principalId = new Types.ObjectId();
+      model.findOne.mockResolvedValue({
+        _id: id,
+        hasExplicitGrants: true,
+        grants: [{ principalType: 'user', principalId, access: 'edit' }],
+      });
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.revokeGrant(id, 'user', principalId);
+
+      // hasExplicitGrants is deliberately absent from this $set — deny-all is preserved, not reverted.
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { grants: [] } });
+    });
+  });
+
+  describe('resetToInherited', () => {
+    it('clears grants and resumes inheriting', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.resetToInherited(id);
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { grants: [], hasExplicitGrants: false } });
+    });
+  });
+
+  describe('setPublic', () => {
+    it('setting isPublic true also flips hasExplicitGrants true', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.setPublic(id, true);
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { isPublic: true, hasExplicitGrants: true } });
+    });
+
+    it('setting isPublic false (narrowing) also flips hasExplicitGrants true — otherwise the narrowing would be ignored while still inheriting', async () => {
+      const model = makeModel();
+      const id = new Types.ObjectId();
+
+      const repo = new FoldersRepository(model as any, cls as any);
+      await repo.setPublic(id, false);
+
+      expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { isPublic: false, hasExplicitGrants: true } });
+    });
+  });
 });

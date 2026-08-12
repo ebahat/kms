@@ -24,6 +24,7 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
   let folders: any;
   let groups: any;
   let documents: any;
+  let auditEvents: any;
   let cache: any;
   let controller: FoldersController;
 
@@ -36,9 +37,14 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       moveFolder: jest.fn(),
       findChildren: jest.fn().mockResolvedValue([]),
       deleteOne: jest.fn().mockResolvedValue(undefined),
+      upsertGrant: jest.fn(),
+      revokeGrant: jest.fn(),
+      resetToInherited: jest.fn(),
+      setPublic: jest.fn(),
     };
     groups = { findForMember: jest.fn().mockResolvedValue([]), findAllForTenant: jest.fn().mockResolvedValue([]) };
     documents = { findByFolder: jest.fn().mockResolvedValue([]) };
+    auditEvents = { record: jest.fn().mockResolvedValue(undefined) };
     // No real Redis in a unit test — every get* rejects so resolveFolderPermissionsCached/
     // computeFolderWideningCached fall through to direct computation (their own documented
     // "Redis unreachable" fallback), and every set* resolves as a no-op write.
@@ -48,8 +54,9 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       setResolution: jest.fn().mockResolvedValue(undefined),
       getWidening: jest.fn().mockRejectedValue(new Error('no redis in unit test')),
       setWidening: jest.fn().mockResolvedValue(undefined),
+      bumpVersion: jest.fn().mockResolvedValue(1),
     };
-    controller = new FoldersController(cls, folders, groups, documents, cache);
+    controller = new FoldersController(cls, folders, groups, documents, auditEvents, cache);
   });
 
   describe('list', () => {
@@ -322,6 +329,174 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(folders.deleteOne).toHaveBeenCalledWith({ _id: folder._id });
       expect(result).toEqual({ deleted: true });
+    });
+  });
+
+  describe('addGrant (Phase 2 plan Task 5)', () => {
+    const manageFolder = () => folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+
+    it('404s below manage tier', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(
+        controller.addGrant(folder._id.toString(), { principalType: 'user', principalId: newObjectId().toString(), access: 'read' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(folders.upsertGrant).not.toHaveBeenCalled();
+    });
+
+    it('adds a grant, bumps permVersion, and records an audit event', async () => {
+      const folder = manageFolder();
+      const grantedUserId = newObjectId();
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      folders.upsertGrant.mockResolvedValue({ ...folder, hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: grantedUserId, access: 'edit' }] });
+
+      await controller.addGrant(folder._id.toString(), { principalType: 'user', principalId: grantedUserId.toString(), access: 'edit' });
+
+      expect(folders.upsertGrant).toHaveBeenCalledWith(folder._id, { principalType: 'user', principalId: grantedUserId, access: 'edit' });
+      expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.grant.added', targetId: folder._id }));
+    });
+
+    it('does not fail the request when the permVersion bump fails (best-effort)', async () => {
+      const folder = manageFolder();
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      folders.upsertGrant.mockResolvedValue(folder);
+      cache.bumpVersion.mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        controller.addGrant(folder._id.toString(), { principalType: 'user', principalId: newObjectId().toString(), access: 'read' }),
+      ).resolves.toBeDefined();
+      expect(auditEvents.record).toHaveBeenCalled();
+    });
+
+    it('rejects a malformed body', async () => {
+      const folder = manageFolder();
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(
+        controller.addGrant(folder._id.toString(), { principalType: 'user', principalId: 'not-an-object-id', access: 'read' }),
+      ).rejects.toThrow(ZodError);
+      expect(folders.upsertGrant).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('revokeGrant', () => {
+    it('404s below manage tier', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(
+        controller.revokeGrant(folder._id.toString(), { principalType: 'user', principalId: userId.toString() }),
+      ).rejects.toThrow(NotFoundException);
+      expect(folders.revokeGrant).not.toHaveBeenCalled();
+    });
+
+    it('revokes a grant, bumps permVersion, and audits', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      folders.revokeGrant.mockResolvedValue({ ...folder, grants: [] });
+
+      await controller.revokeGrant(folder._id.toString(), { principalType: 'user', principalId: userId.toString() });
+
+      expect(folders.revokeGrant).toHaveBeenCalledWith(folder._id, 'user', userId);
+      expect(cache.bumpVersion).toHaveBeenCalled();
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.grant.revoked' }));
+    });
+  });
+
+  describe('resetToInherited', () => {
+    it('404s below manage tier', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.resetToInherited(folder._id.toString())).rejects.toThrow(NotFoundException);
+      expect(folders.resetToInherited).not.toHaveBeenCalled();
+    });
+
+    it('clears the override, bumps permVersion, and audits', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      folders.resetToInherited.mockResolvedValue({ ...folder, hasExplicitGrants: false, grants: [] });
+
+      await controller.resetToInherited(folder._id.toString());
+
+      expect(folders.resetToInherited).toHaveBeenCalledWith(folder._id);
+      expect(cache.bumpVersion).toHaveBeenCalled();
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.grants.resetToInherited' }));
+    });
+  });
+
+  describe('setPublic', () => {
+    it('404s below manage tier', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.setPublic(folder._id.toString(), { isPublic: true })).rejects.toThrow(NotFoundException);
+      expect(folders.setPublic).not.toHaveBeenCalled();
+    });
+
+    it('sets isPublic, bumps permVersion, and audits', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      folders.setPublic.mockResolvedValue({ ...folder, isPublic: true });
+
+      await controller.setPublic(folder._id.toString(), { isPublic: true });
+
+      expect(folders.setPublic).toHaveBeenCalledWith(folder._id, true);
+      expect(cache.bumpVersion).toHaveBeenCalled();
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.public.changed', metadata: { isPublic: true } }));
+    });
+
+    it('rejects a malformed body', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.setPublic(folder._id.toString(), { isPublic: 'yes' })).rejects.toThrow(ZodError);
+    });
+  });
+
+  describe('effectivePermission', () => {
+    it('404s below manage tier', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.effectivePermission(folder._id.toString(), newObjectId().toString())).rejects.toThrow(NotFoundException);
+    });
+
+    it('requires a userId query param', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.effectivePermission(folder._id.toString(), undefined)).rejects.toThrow(BadRequestException);
+    });
+
+    it("returns the target user's resolved tier and deciding grant", async () => {
+      const targetUserId = newObjectId();
+      const folder = folderDoc({
+        hasExplicitGrants: true,
+        grants: [
+          { principalType: 'user', principalId: userId, access: 'manage' },
+          { principalType: 'user', principalId: targetUserId, access: 'edit' },
+        ],
+      });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      const result = await controller.effectivePermission(folder._id.toString(), targetUserId.toString());
+
+      expect(result.tier).toBe('edit');
+      expect(result.decidingGrant).toEqual({ tier: 'edit', via: { principalType: 'user', principalId: targetUserId.toString() } });
+    });
+
+    it('returns a null tier and null decidingGrant for a target user with no access', async () => {
+      const targetUserId = newObjectId();
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      const result = await controller.effectivePermission(folder._id.toString(), targetUserId.toString());
+
+      expect(result.tier).toBeNull();
+      expect(result.decidingGrant).toBeNull();
     });
   });
 });

@@ -83,4 +83,59 @@ export class FoldersRepository extends ScopedRepository<Folder> {
 
     return (await this.findById(id)) as unknown as FolderDocument;
   }
+
+  /**
+   * Adds or updates one grant. Flips `hasExplicitGrants` to true whenever
+   * this is called — a grant added to a still-inheriting folder without
+   * that flip would be silently ignored by the resolver (ADR-0005 step 2:
+   * a folder only reads its own `grants` when `hasExplicitGrants` is true).
+   */
+  async upsertGrant(
+    id: Types.ObjectId,
+    grant: { principalType: 'user' | 'group'; principalId: Types.ObjectId; access: 'read' | 'edit' | 'manage' },
+  ): Promise<FolderDocument | null> {
+    const folder = await this.findById(id);
+    if (!folder) return null;
+
+    const withoutExisting = folder.grants.filter(
+      (g) => !(g.principalType === grant.principalType && g.principalId.equals(grant.principalId)),
+    );
+    await this.updateOne({ _id: id }, { $set: { grants: [...withoutExisting, grant], hasExplicitGrants: true } });
+    return this.findById(id) as unknown as Promise<FolderDocument | null>;
+  }
+
+  /**
+   * Revokes one grant. Deliberately never flips `hasExplicitGrants` back to
+   * false, even when this empties the array — `hasExplicitGrants: true`
+   * with zero grants is a deliberate authoritative deny-all (ADR-0005), a
+   * genuinely different state from "inherit the parent." Auto-reverting
+   * here would silently widen access back to whatever the parent grants —
+   * exactly the hazard ADR-0005's widening detection exists to surface.
+   * Use resetToInherited to actually resume inheriting.
+   */
+  async revokeGrant(id: Types.ObjectId, principalType: 'user' | 'group', principalId: Types.ObjectId): Promise<FolderDocument | null> {
+    const folder = await this.findById(id);
+    if (!folder) return null;
+
+    const remaining = folder.grants.filter((g) => !(g.principalType === principalType && g.principalId.equals(principalId)));
+    await this.updateOne({ _id: id }, { $set: { grants: remaining } });
+    return this.findById(id) as unknown as Promise<FolderDocument | null>;
+  }
+
+  /** The only way back from an explicit override/deny-all to inheriting the parent's bundle again. */
+  async resetToInherited(id: Types.ObjectId): Promise<FolderDocument | null> {
+    await this.updateOne({ _id: id }, { $set: { grants: [], hasExplicitGrants: false } });
+    return this.findById(id) as unknown as Promise<FolderDocument | null>;
+  }
+
+  /**
+   * `isPublic` and `grants` move together as one bundle (resolve-permissions.ts's
+   * EffectiveBundle) — toggling `isPublic` on an inheriting folder needs the
+   * same `hasExplicitGrants` flip as a grant does, in either direction (turning
+   * public ON or OFF), or the change would be silently ignored the same way.
+   */
+  async setPublic(id: Types.ObjectId, isPublic: boolean): Promise<FolderDocument | null> {
+    await this.updateOne({ _id: id }, { $set: { isPublic, hasExplicitGrants: true } });
+    return this.findById(id) as unknown as Promise<FolderDocument | null>;
+  }
 }
