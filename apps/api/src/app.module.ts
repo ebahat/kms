@@ -49,6 +49,7 @@ import { DocumentsPermissionsService } from './documents/documents-permissions.s
 import { EventsController } from './groups/events.controller';
 import { TasksController } from './groups/tasks.controller';
 import { CalendarController } from './groups/calendar.controller';
+import { GroupsController } from './groups/groups.controller';
 import { GroupsMembershipService } from './groups/groups-membership.service';
 import { NotificationDispatchService } from './notifications/notification-dispatch.service';
 import { NotificationPreferencesController } from './notifications/notification-preferences.controller';
@@ -98,6 +99,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     AuthController,
     TenantUsersAdminController,
     FoldersController,
+    GroupsController,
     DocumentsController,
     EventsController,
     TasksController,
