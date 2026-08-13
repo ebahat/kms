@@ -27,10 +27,19 @@ async function request<T>(base: string, path: string, options: RequestInit = {})
   return body as T;
 }
 
+/** Builds a query string from defined values only — `undefined`/`null` params are omitted, not sent as `"undefined"`. */
+export function toQuery(params: Record<string, string | undefined | null>): string {
+  const entries = Object.entries(params).filter((entry): entry is [string, string] => entry[1] != null);
+  if (entries.length === 0) return '';
+  return `?${new URLSearchParams(entries).toString()}`;
+}
+
 /** Tenant realm (apps/api). */
 export const tenantApi = {
   get: <T>(path: string) => request<T>(API_BASE, path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
+  patch: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
+  del: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'DELETE', body: data ? JSON.stringify(data) : undefined }),
 };
 
 /** Platform-admin realm (apps/portal-api) — the admin-hostname UI area (ADR-0004). */
