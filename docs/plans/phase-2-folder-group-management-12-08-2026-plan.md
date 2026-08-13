@@ -1,7 +1,13 @@
 # Phase 2 — Folder/Group Management API (backend) — 2026-08-12
 
-**Status:** DRAFT (revised 2026-08-12 after a verification pass against the actual code — see
-"Revision note" below). Not yet executed.
+**Status:** DONE (executed 2026-08-12/13). All 7 tasks complete, including Task 7's full-branch review
+(`--level medium`) and its 7 findings — 6 fixed (stale `permVersion` on create/move, missing ZodError
+filter on `GroupsController`, missing audit trail on rename/move/delete, group-membership
+over-exposure, case-sensitive id comparisons, redundant re-fetch in `move()`), 1 deferred as a
+documented non-blocking perf note (`hasAnyFolderGrant`'s full-tenant scan, bounded by
+`MAX_FOLDERS_PER_TENANT`). `docs/plans/implementation-phases-11-07-2026-plan.md`'s 2.1b/2.2b marked
+DONE. Full workspace check: 30/30. apps/api unit suite: 247/247. Not yet merged to `main` — see the
+worktree's own report for merge-readiness.
 
 **Scope:** the actual remaining backend gap in Phase 2 (`docs/plans/implementation-phases-11-07-2026-plan.md`),
 found by audit on 2026-08-12: `FoldersController` and `GroupsController` do not exist anywhere in

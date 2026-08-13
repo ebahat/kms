@@ -1,6 +1,6 @@
 # Phased Implementation Plan — Multi-Tenant RAG Knowledge Base
 
-**Date:** 2026-07-11 (updated 2026-08-12) · **Status:** IN PROGRESS — Phase 0 and Phase 1 complete; Phase 2A backend complete and merged to `main` (UI screens still open, see Phase 2A.3); Phase 2 partially complete as a side effect of Phase 2A's own needs (data model, permission-resolution library, upload/serving/recycle-bin all real and tested) — the actual remaining Phase 2 gap is the folder/group **management API** (no `FoldersController`/`GroupsController` exist), plus UI and tests; see Phase 2's audit note below
+**Date:** 2026-07-11 (updated 2026-08-13) · **Status:** IN PROGRESS — Phase 0 and Phase 1 complete; Phase 2A backend complete and merged to `main` (UI screens still open, see Phase 2A.3); Phase 2's backend is now fully complete (2.1a/2.1b/2.2a/2.2b/2.3/2.4/2.5 all DONE, including the folder/group management API and `permVersion` wiring landed 2026-08-13) — the remaining Phase 2 gap is UI (2.6) and the integration test suite (2.7); see Phase 2's audit note below
 **Sources:** ADRs 0001–0009 (all Accepted; 0008 gated), `docs/architecture/system-overview.md`, `docs/architecture/design-review-2026-07-10.md`, `docs/test_plan_v01.md`, `docs/security_audit_plan_v01.md`, `docs/ui/screens_spec_v01.md`, PRD `docs/requirements_v02.md`
 **Prime directive (ADR-0009 + working rule 3):** guards before features — the monorepo, lint rules, backstop plugin, CI gates, and cross-tenant test harness exist **before** the first feature endpoint. Every phase ships its tests inside the phase, not after.
 
@@ -49,20 +49,20 @@ Each phase ends with: unit/integration tests green, the code-quality pipeline (w
 ## Phase 2 — Folders, permissions, file storage
 
 **Audited 2026-08-12** (before starting Phase 2 planning, given how much Phase 2A's own work ended up
-depending on this surface): the pieces Phase 2A's document/notification retrofit needed are real and
-tested — the folder/group **data model**, the **entire ADR-0005 resolution algorithm + versioned Redis
-cache** as a library (`libs/permissions`, including a working `PermissionCache.bumpVersion()`), and
-`DocumentsPermissionsService` consuming it for upload/download/delete. But **there is no
-`FoldersController` and no `GroupsController` anywhere in `apps/api`** — no route exists to create a
-folder, browse the tree, view/grant/revoke a folder's permissions, or create a group/manage its
-membership. Every group in the codebase today exists only because a test fixture created it directly
-via `GroupsRepository`; `PermissionCache.bumpVersion()` is currently dead code because nothing ever
-mutates a grant through the API. This is the actual remaining scope below, not a thin UI-only pass.
+depending on this surface): found that the pieces Phase 2A's document/notification retrofit needed were
+already real and tested — the folder/group **data model**, the **entire ADR-0005 resolution algorithm +
+versioned Redis cache** as a library (`libs/permissions`), and `DocumentsPermissionsService` consuming it
+for upload/download/delete — but there was no `FoldersController`/`GroupsController` anywhere in
+`apps/api`, and `PermissionCache.bumpVersion()` was dead code because nothing ever mutated a grant
+through the API. **Closed 2026-08-13** via `docs/plans/phase-2-folder-group-management-12-08-2026-plan.md`
+(2.1b/2.2b below) — the API surface, `permVersion` wiring, and audit trail now exist and are tested.
+Remaining Phase 2 scope is UI (2.6) and the integration test suite (2.7), both deliberately deferred by
+that plan to a follow-on.
 
 - [DONE] 2.1a Data model: `folders`/`groups` schemas + repositories (ADR-0002/0005); ~2,000-folders/tenant and depth-≤10 cardinality bounds enforced (`FoldersRepository.createFolder`).
-- [ ] 2.1b **Folder/group management API** (the real gap): `FoldersController` (create, list/browse tree, get detail, grant/revoke — manage-tier only per ADR-0005) and `GroupsController` (create, list, membership add/remove). Neither exists yet.
+- [DONE] 2.1b **Folder/group management API** — `docs/plans/phase-2-folder-group-management-12-08-2026-plan.md`'s 7-task SDD ledger (2026-08-13): `FoldersController` (list/tree with widening badges, detail with manage-tier-gated grants, create/rename/move/delete, grant/revoke/reset-to-inherited/set-public, effective-permission "why can Dana see this" preview) and `GroupsController` (create, list/detail with membership withheld below admin/member, membership add/remove, delete-when-unreferenced). Data-integrity hardening (Task 1): dangling/cross-tenant `parentId` rejected at creation, resolver fails closed on any orphan reference instead of throwing.
 - [DONE] 2.2a Permission resolution library (ADR-0005): pure function (depth-sorted, override-not-merge, principal union, `isPublic`) + versioned Redis cache (`libs/permissions`), consumed today by `DocumentsPermissionsService`.
-- [ ] 2.2b **Wire `permVersion` bump to real grant mutations** — `PermissionCache.bumpVersion(tenantId)` exists and is correct but is only exercised once 2.1b's grant-mutation endpoints exist to call it in the same operation as the write (ADR-0005's data-flow table).
+- [DONE] 2.2b **Wire `permVersion` bump to real grant mutations** — grant/revoke/reset/setPublic (folders), membership add/remove (groups), and (fixed in Task 7's review pass) folder create/move all bump `PermissionCache.bumpVersion(tenantId)` in the same operation as the write, matching ADR-0005's data-flow table; audited throughout.
 - [DONE] 2.3 Upload path (ADR-0006/0003): API-streamed, magic-byte + 50 MB pre-buffer checks, quota gate before enqueue, `documents`/`documentVersions` records, per-tenant GCS prefixes (`DocumentsController.upload`).
 - [DONE] 2.4 Serving: V4 signed URLs ≤ 5 min, attachment-only, permission re-check at issuance (ADR-0006); download audit events.
 - [DONE] 2.5 Recycle bin + deletion machinery: `recycleBinEntries`, purge (`DocumentsController.restore`/`.purgeEarly`), `deletionVerifications` records. Tenant-offboarding deletion **certificate** (PRD §14, distinct from the per-document verification record above) is not built — flagged as a separate, smaller, tenant-lifecycle-scoped gap in `portal-api`, not blocking the rest of Phase 2.
