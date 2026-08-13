@@ -11,6 +11,9 @@ function folderDoc(overrides: Partial<Record<string, any>> = {}) {
     grants: [],
     hasExplicitGrants: false,
     isPublic: false,
+    // Real FoldersRepository.createFolder()/moveFolder() always set a real path array
+    // (empty for a root folder) — never undefined, matching production data shape.
+    path: [],
     ...overrides,
   };
 }
@@ -115,6 +118,25 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(result[0].broaderThanParent).toBe(true);
       expect(result[0].addedGroups).toEqual(['Sales']);
+    });
+
+    it('resolves the ancestor path to names (Phase 2 UI plan Task 3 breadcrumb)', async () => {
+      const grandparent = folderDoc({ name: 'Root', hasExplicitGrants: true, isPublic: true });
+      const parent = folderDoc({ name: 'Mid', parentId: grandparent._id, path: [grandparent._id], hasExplicitGrants: false });
+      const child = folderDoc({
+        name: 'Leaf',
+        parentId: parent._id,
+        path: [grandparent._id, parent._id],
+        hasExplicitGrants: false,
+      });
+      folders.findAllForTenant.mockResolvedValue([grandparent, parent, child]);
+
+      const result = await controller.list(parent._id.toString());
+
+      expect(result[0].path).toEqual([
+        { id: grandparent._id.toString(), name: 'Root' },
+        { id: parent._id.toString(), name: 'Mid' },
+      ]);
     });
   });
 

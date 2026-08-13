@@ -59,6 +59,8 @@ interface FolderSummary {
   broaderThanParent: boolean;
   addedGroups: string[];
   becamePublic: boolean;
+  /** Root-to-immediate-parent ancestor chain (Phase 2 UI plan Task 3 — the folder-tree screen's breadcrumb needs names, not just `Folder.path`'s raw ObjectIds). */
+  path: { id: string; name: string }[];
 }
 
 /**
@@ -93,7 +95,8 @@ export class FoldersController {
     const children = allFolders.filter((f) => (f.parentId ? f.parentId.toString() : null) === parentKey && readable.has(f._id.toString()));
 
     const groupNames = await this.groupNameLookup();
-    return children.map((f) => this.toSummary(f, resolution, widening.get(f._id.toString()), groupNames));
+    const folderNames = this.folderNameLookup(allFolders);
+    return children.map((f) => this.toSummary(f, resolution, widening.get(f._id.toString()), groupNames, folderNames));
   }
 
   @Get(':id')
@@ -113,7 +116,8 @@ export class FoldersController {
     if (!resolution.permittedRead.includes(id)) throw new NotFoundException();
 
     const groupNames = await this.groupNameLookup();
-    const summary = this.toSummary(folder, resolution, widening.get(id), groupNames);
+    const folderNames = this.folderNameLookup(allFolders);
+    const summary = this.toSummary(folder, resolution, widening.get(id), groupNames, folderNames);
 
     // The raw grants array is C3 tenant-admin data (ADR-0005: "individually-granted users remain
     // visible only in the tenant-admin C3 screen") — withheld below `manage` tier.
@@ -408,11 +412,17 @@ export class FoldersController {
     return new Map(allGroups.map((g) => [g._id.toString(), g.name]));
   }
 
+  /** No extra query — `allFolders` is already loaded by every caller of toSummary(). */
+  private folderNameLookup(allFolders: FolderDocument[]): Map<string, string> {
+    return new Map(allFolders.map((f) => [f._id.toString(), f.name]));
+  }
+
   private toSummary(
     folder: FolderDocument,
     resolution: FolderPermissionResolution,
     widening: FolderWideningInfo | undefined,
     groupNames: Map<string, string>,
+    folderNames: Map<string, string>,
   ): FolderSummary {
     const id = folder._id.toString();
     const tier: FolderSummary['tier'] = resolution.permittedManage.includes(id) ? 'manage' : resolution.permittedEdit.includes(id) ? 'edit' : 'read';
@@ -427,6 +437,10 @@ export class FoldersController {
       broaderThanParent: widening?.broaderThanParent ?? false,
       addedGroups: (widening?.addedGroups ?? []).map((groupId) => groupNames.get(groupId) ?? groupId),
       becamePublic: widening?.becamePublic ?? false,
+      path: folder.path.map((ancestorId) => {
+        const ancestorIdString = ancestorId.toString();
+        return { id: ancestorIdString, name: folderNames.get(ancestorIdString) ?? ancestorIdString };
+      }),
     };
   }
 
