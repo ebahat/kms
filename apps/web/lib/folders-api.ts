@@ -35,6 +35,19 @@ export type DocumentSummary = {
   createdAt: string;
 };
 
+export type GrantsResponse = { id: string; hasExplicitGrants: boolean; isPublic: boolean; grants: FolderGrant[] };
+
+export type DecidingGrant =
+  | { tier: 'read' | 'edit' | 'manage'; via: 'public' }
+  | { tier: 'read' | 'edit' | 'manage'; via: { principalType: 'user' | 'group'; principalId: string } };
+
+export type EffectivePermission = {
+  userId: string;
+  folderId: string;
+  tier: 'read' | 'edit' | 'manage' | null;
+  decidingGrant: DecidingGrant | null;
+};
+
 export const foldersApi = {
   list: (parentId?: string) => tenantApi.get<FolderSummary[]>(`/folders${toQuery({ parentId })}`),
   detail: (id: string) => tenantApi.get<FolderDetail>(`/folders/${id}`),
@@ -44,4 +57,11 @@ export const foldersApi = {
   move: (id: string, parentId: string | null) => tenantApi.patch<{ id: string; parentId: string | null }>(`/folders/${id}/move`, { parentId }),
   remove: (id: string) => tenantApi.del<{ deleted: true }>(`/folders/${id}`),
   documents: (id: string) => tenantApi.get<DocumentSummary[]>(`/folders/${id}/documents`),
+  addGrant: (id: string, grant: FolderGrant) => tenantApi.post<GrantsResponse>(`/folders/${id}/grants`, grant),
+  revokeGrant: (id: string, principalType: 'user' | 'group', principalId: string) =>
+    tenantApi.del<GrantsResponse>(`/folders/${id}/grants`, { principalType, principalId }),
+  resetToInherited: (id: string) => tenantApi.post<GrantsResponse>(`/folders/${id}/grants/inherit`),
+  setPublic: (id: string, isPublic: boolean) => tenantApi.patch<GrantsResponse>(`/folders/${id}/public`, { isPublic }),
+  effectivePermission: (id: string, userId: string) =>
+    tenantApi.get<EffectivePermission>(`/folders/${id}/effective-permission${toQuery({ userId })}`),
 };
