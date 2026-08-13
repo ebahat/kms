@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ApiError } from '../../lib/api';
+import { ApiError, apiErrorMessage } from '../../lib/api';
 import { FolderSummary, foldersApi } from '../../lib/folders-api';
 import { useSession } from '../../lib/use-session';
 
@@ -20,7 +20,7 @@ export default function FoldersRootPage() {
     foldersApi
       .list()
       .then(setFolders)
-      .catch((e) => setError(e instanceof ApiError ? e.message : 'שגיאה בטעינת התיקיות'));
+      .catch((e) => setError(apiErrorMessage(e, 'שגיאה בטעינת התיקיות')));
   }, []);
 
   async function onCreate() {
@@ -32,7 +32,7 @@ export default function FoldersRootPage() {
       setNewName('');
       router.push(`/folders/${created.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'יצירת התיקייה נכשלה');
+      setError(apiErrorMessage(e, 'יצירת התיקייה נכשלה'));
     } finally {
       setCreating(false);
     }

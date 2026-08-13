@@ -34,6 +34,23 @@ export function toQuery(params: Record<string, string | undefined | null>): stri
   return `?${new URLSearchParams(entries).toString()}`;
 }
 
+/**
+ * Every FolderExceptionFilter-mapped error body is `{error: CODE, message: humanReadableText}` —
+ * `ApiError#message` itself resolves to `CODE` (existing behavior `login/page.tsx` relies on to
+ * branch on `err.body.error === 'CAPTCHA_REQUIRED'`, deliberately left unchanged here). This helper
+ * is for screens that want to show the backend's own human-readable text instead of curating
+ * per-error-code Hebrew copy for every possible domain error (FOLDER_NOT_EMPTY, GROUP_IN_USE, etc).
+ */
+export function apiErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) {
+    if (e.body && typeof e.body === 'object' && 'message' in e.body && typeof (e.body as { message: unknown }).message === 'string') {
+      return (e.body as { message: string }).message;
+    }
+    return fallback;
+  }
+  return fallback;
+}
+
 /** Tenant realm (apps/api). */
 export const tenantApi = {
   get: <T>(path: string) => request<T>(API_BASE, path, { method: 'GET' }),

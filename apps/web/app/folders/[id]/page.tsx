@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ApiError } from '../../../lib/api';
+import { ApiError, apiErrorMessage } from '../../../lib/api';
 import { DocumentSummary, FolderDetail, FolderSummary, foldersApi } from '../../../lib/folders-api';
 import { useSession } from '../../../lib/use-session';
 
@@ -41,7 +41,7 @@ export default function FolderDetailPage() {
       setRenameValue(f.name);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setNotFound(true);
-      else setError(e instanceof ApiError ? e.message : 'שגיאה בטעינת התיקייה');
+      else setError(apiErrorMessage(e, 'שגיאה בטעינת התיקייה'));
     }
   }, [folderId]);
 
@@ -58,7 +58,7 @@ export default function FolderDetailPage() {
       setNewName('');
       router.push(`/folders/${created.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'יצירת התיקייה נכשלה');
+      setError(apiErrorMessage(e, 'יצירת התיקייה נכשלה'));
     } finally {
       setBusy(false);
     }
@@ -73,7 +73,7 @@ export default function FolderDetailPage() {
       setRenaming(false);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'שינוי השם נכשל');
+      setError(apiErrorMessage(e, 'שינוי השם נכשל'));
     } finally {
       setBusy(false);
     }
@@ -88,7 +88,7 @@ export default function FolderDetailPage() {
       await foldersApi.move(folderId, target.trim() || null);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'ההעברה נכשלה');
+      setError(apiErrorMessage(e, 'ההעברה נכשלה'));
     } finally {
       setBusy(false);
     }
@@ -102,7 +102,7 @@ export default function FolderDetailPage() {
       await foldersApi.remove(folderId);
       router.push(folder?.parentId ? `/folders/${folder.parentId}` : '/folders');
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'המחיקה נכשלה — ודאו שהתיקייה ריקה');
+      setError(apiErrorMessage(e, 'המחיקה נכשלה — ודאו שהתיקייה ריקה'));
       setBusy(false);
     }
   }

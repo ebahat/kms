@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ApiError } from '../../../../lib/api';
+import { ApiError, apiErrorMessage } from '../../../../lib/api';
 import { EffectivePermission, FolderDetail, FolderGrant, foldersApi } from '../../../../lib/folders-api';
 import { useSession } from '../../../../lib/use-session';
 
@@ -35,7 +35,7 @@ export default function FolderPermissionsPage() {
       setFolder(f);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setNotFound(true);
-      else setError(e instanceof ApiError ? e.message : 'שגיאה בטעינת הרשאות התיקייה');
+      else setError(apiErrorMessage(e, 'שגיאה בטעינת הרשאות התיקייה'));
     }
   }, [folderId]);
 
@@ -52,7 +52,7 @@ export default function FolderPermissionsPage() {
       setPrincipalId('');
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'הוספת ההרשאה נכשלה');
+      setError(apiErrorMessage(e, 'הוספת ההרשאה נכשלה'));
     } finally {
       setBusy(false);
     }
@@ -65,7 +65,7 @@ export default function FolderPermissionsPage() {
       await foldersApi.revokeGrant(folderId, grant.principalType, grant.principalId);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'ביטול ההרשאה נכשל');
+      setError(apiErrorMessage(e, 'ביטול ההרשאה נכשל'));
     } finally {
       setBusy(false);
     }
@@ -79,7 +79,7 @@ export default function FolderPermissionsPage() {
       await foldersApi.setPublic(folderId, !folder.isPublic);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'עדכון הנגישות הציבורית נכשל');
+      setError(apiErrorMessage(e, 'עדכון הנגישות הציבורית נכשל'));
     } finally {
       setBusy(false);
     }
@@ -93,7 +93,7 @@ export default function FolderPermissionsPage() {
       await foldersApi.resetToInherited(folderId);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'האיפוס נכשל');
+      setError(apiErrorMessage(e, 'האיפוס נכשל'));
     } finally {
       setBusy(false);
     }
@@ -106,7 +106,7 @@ export default function FolderPermissionsPage() {
       const result = await foldersApi.effectivePermission(folderId, previewUserId.trim());
       setPreview(result);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'תצוגת ההרשאה האפקטיבית נכשלה');
+      setError(apiErrorMessage(e, 'תצוגת ההרשאה האפקטיבית נכשלה'));
     }
   }
 
