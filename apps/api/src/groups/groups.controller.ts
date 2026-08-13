@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import { CreateGroupRequestSchema, UpdateGroupMembersRequestSchema } from '@kms/contracts';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@kms/data';
 import { PermissionCache } from '@kms/permissions';
 import { AdminOnlyGuard } from '../common/admin-only.guard';
+import { FolderExceptionFilter } from '../folders/folder-exception.filter';
 import { PERMISSION_CACHE } from '../redis.provider';
 
 const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
@@ -25,8 +26,13 @@ const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
  * folder grants and calendar/kanban contents stay gated by their own
  * controllers), so plain list/detail reads are open to any authenticated
  * tenant user, unlike the admin-only mutations.
+ *
+ * Shares FoldersController's FolderExceptionFilter purely for its ZodError→400 mapping (the
+ * folder-domain error branches it also catches never fire here) — the alternative was a second,
+ * near-identical filter, which the review that caught this gap rejected as needless duplication.
  */
 @Controller('groups')
+@UseFilters(FolderExceptionFilter)
 export class GroupsController {
   constructor(
     private readonly cls: ClsService,
@@ -40,16 +46,18 @@ export class GroupsController {
 
   @Get()
   async list() {
+    const scope = this.currentScope();
     const allGroups = await this.groups.findAllForTenant();
-    return allGroups.map((g) => this.toSummary(g));
+    return allGroups.map((g) => this.toSummary(g, scope));
   }
 
   @Get(':id')
   async detail(@Param('id') id: string) {
     if (!OBJECT_ID_RE.test(id)) throw new NotFoundException();
+    const scope = this.currentScope();
     const group = await this.groups.findById(toObjectId(id));
     if (!group) throw new NotFoundException();
-    return this.toSummary(group as unknown as GroupDocument);
+    return this.toSummary(group as unknown as GroupDocument, scope);
   }
 
   @Post()
@@ -57,9 +65,10 @@ export class GroupsController {
   @UseGuards(AdminOnlyGuard)
   async create(@Body() body: unknown) {
     const { name } = CreateGroupRequestSchema.parse(body);
+    const scope = this.currentScope();
     const created = await this.groups.createGroup(name);
     await this.auditEvents.record({ action: 'group.created', targetId: created._id, metadata: { name } });
-    return this.toSummary(created);
+    return this.toSummary(created, scope);
   }
 
   /**
@@ -87,7 +96,7 @@ export class GroupsController {
     const updated = await this.groups.findById(toObjectId(id));
     await this.bumpVersionAndAudit(id, 'group.members.updated', { add, remove });
 
-    return this.toSummary(updated as unknown as GroupDocument);
+    return this.toSummary(updated as unknown as GroupDocument, this.currentScope());
   }
 
   /**
@@ -141,11 +150,16 @@ export class GroupsController {
     return scope;
   }
 
-  private toSummary(group: GroupDocument) {
-    return {
-      id: group._id.toString(),
-      name: group.name,
-      memberUserIds: group.memberUserIds.map((id) => id.toString()),
-    };
+  /**
+   * memberUserIds is membership data, not just "the group exists" data (e.g. it reveals exactly
+   * who is in an "Executives" or "Legal" group) — withheld from a caller who is neither a tenant
+   * admin nor a member of this specific group, same withholding pattern as
+   * FoldersController.detail()'s grants array below manage tier.
+   */
+  private toSummary(group: GroupDocument, scope: Scope) {
+    const base = { id: group._id.toString(), name: group.name };
+    const isMember = group.memberUserIds.some((id) => id.equals(scope.userId));
+    if (scope.role !== 'admin' && !isMember) return base;
+    return { ...base, memberUserIds: group.memberUserIds.map((id) => id.toString()) };
   }
 }

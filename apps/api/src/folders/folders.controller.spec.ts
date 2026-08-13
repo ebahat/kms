@@ -161,6 +161,18 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(result.tier).toBe('manage');
       expect(result.grants).toEqual([{ principalType: 'user', principalId: userId.toString(), access: 'manage' }]);
     });
+
+    it('finds the folder when the id in the URL is uppercase hex (case-insensitive match)', async () => {
+      const folder = folderDoc({
+        hasExplicitGrants: true,
+        grants: [{ principalType: 'user', principalId: userId, access: 'read' }],
+      });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      const result = await controller.detail(folder._id.toString().toUpperCase());
+
+      expect(result.id).toBe(folder._id.toString());
+    });
   });
 
   describe('create (Phase 2 plan Task 4)', () => {
@@ -169,13 +181,15 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.createFolder).not.toHaveBeenCalled();
     });
 
-    it('lets an admin create a root folder', async () => {
+    it('lets an admin create a root folder, bumps permVersion, and audits', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
 
       const result = await controller.create({ parentId: null, name: 'Root' });
 
       expect(folders.createFolder).toHaveBeenCalledWith({ name: 'Root', parentId: null });
       expect(result.parentId).toBeNull();
+      expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.created' }));
     });
 
     it('404s creating under a parent the caller can only read (not edit)', async () => {
@@ -186,11 +200,22 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.createFolder).not.toHaveBeenCalled();
     });
 
-    it('creates under a parent the caller can edit', async () => {
+    it('creates under a parent the caller can edit, bumps permVersion, and audits', async () => {
       const parent = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
       folders.findAllForTenant.mockResolvedValue([parent]);
 
       await controller.create({ parentId: parent._id.toString(), name: 'Child' });
+
+      expect(folders.createFolder).toHaveBeenCalledWith({ name: 'Child', parentId: parent._id });
+      expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.created' }));
+    });
+
+    it('creates under a parent whose id was sent in uppercase hex (case-insensitive match)', async () => {
+      const parent = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([parent]);
+
+      await controller.create({ parentId: parent._id.toString().toUpperCase(), name: 'Child' });
 
       expect(folders.createFolder).toHaveBeenCalledWith({ name: 'Child', parentId: parent._id });
     });
@@ -210,7 +235,7 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.renameFolder).not.toHaveBeenCalled();
     });
 
-    it('renames at manage tier', async () => {
+    it('renames at manage tier, audits, and does not bump permVersion (name is not cached)', async () => {
       const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
       folders.findAllForTenant.mockResolvedValue([folder]);
       folders.renameFolder.mockResolvedValue({ ...folder, name: 'New name' });
@@ -219,6 +244,8 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(folders.renameFolder).toHaveBeenCalledWith(folder._id, 'New name');
       expect(result.name).toBe('New name');
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.renamed', targetId: folder._id }));
+      expect(cache.bumpVersion).not.toHaveBeenCalled();
     });
 
     it('rejects a malformed body', async () => {
@@ -246,7 +273,7 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.moveFolder).not.toHaveBeenCalled();
     });
 
-    it('lets an admin move a folder to root', async () => {
+    it('lets an admin move a folder to root, bumps permVersion, and audits', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       const folder = folderDoc();
       folders.findAllForTenant.mockResolvedValue([folder]);
@@ -255,6 +282,8 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       await controller.move(folder._id.toString(), { parentId: null });
 
       expect(folders.moveFolder).toHaveBeenCalledWith(folder._id, null);
+      expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.moved', targetId: folder._id }));
     });
 
     it('404s moving into a destination the caller cannot edit', async () => {
@@ -266,13 +295,25 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.moveFolder).not.toHaveBeenCalled();
     });
 
-    it('moves into a destination the caller can edit', async () => {
+    it('moves into a destination the caller can edit, reusing requireTier\'s resolution (single findAllForTenant call)', async () => {
       const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
       const destination = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
       folders.findAllForTenant.mockResolvedValue([folder, destination]);
       folders.moveFolder.mockResolvedValue({ ...folder, parentId: destination._id });
 
       await controller.move(folder._id.toString(), { parentId: destination._id.toString() });
+
+      expect(folders.moveFolder).toHaveBeenCalledWith(folder._id, destination._id);
+      expect(folders.findAllForTenant).toHaveBeenCalledTimes(1);
+    });
+
+    it('moves into a destination whose id was sent in uppercase hex (case-insensitive match)', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
+      const destination = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'edit' }] });
+      folders.findAllForTenant.mockResolvedValue([folder, destination]);
+      folders.moveFolder.mockResolvedValue({ ...folder, parentId: destination._id });
+
+      await controller.move(folder._id.toString(), { parentId: destination._id.toString().toUpperCase() });
 
       expect(folders.moveFolder).toHaveBeenCalledWith(folder._id, destination._id);
     });
@@ -321,7 +362,7 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       expect(folders.deleteOne).not.toHaveBeenCalled();
     });
 
-    it('deletes an empty folder at manage tier', async () => {
+    it('deletes an empty folder at manage tier and audits', async () => {
       const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] });
       folders.findAllForTenant.mockResolvedValue([folder]);
 
@@ -329,6 +370,7 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(folders.deleteOne).toHaveBeenCalledWith({ _id: folder._id });
       expect(result).toEqual({ deleted: true });
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'folder.deleted', targetId: folder._id }));
     });
   });
 

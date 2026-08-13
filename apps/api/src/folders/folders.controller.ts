@@ -99,6 +99,7 @@ export class FoldersController {
   @Get(':id')
   async detail(@Param('id') id: string) {
     if (!OBJECT_ID_RE.test(id)) throw new NotFoundException();
+    id = id.toLowerCase(); // canonical form — see requireTier's own comment for why
 
     const scope = this.currentScope();
     const allFolders = await this.folders.findAllForTenant();
@@ -126,7 +127,12 @@ export class FoldersController {
   @Post()
   @HttpCode(201)
   async create(@Body() body: unknown) {
-    const { parentId, name } = CreateFolderRequestSchema.parse(body);
+    const parsed = CreateFolderRequestSchema.parse(body);
+    const { name } = parsed;
+    // Normalized to canonical lowercase hex: Mongoose ObjectId#toString() always lowercases, but
+    // the request-schema regex accepts uppercase hex too — an uppercase-but-valid id would silently
+    // fail every in-memory `permittedEdit.includes(parentId)` string comparison below otherwise.
+    const parentId = parsed.parentId ? parsed.parentId.toLowerCase() : null;
     const scope = this.currentScope();
 
     if (parentId === null) {
@@ -134,6 +140,7 @@ export class FoldersController {
       // hidden-resource case, so this is a real 403 rather than the usual 404-on-denial convention.
       if (scope.role !== 'admin') throw new ForbiddenException();
       const created = await this.folders.createFolder({ name, parentId: null });
+      await this.bumpVersionAndAudit(created._id.toString(), 'folder.created', { parentId: null, name });
       return this.toCreatedSummary(created);
     }
 
@@ -145,6 +152,11 @@ export class FoldersController {
     if (!resolution.permittedEdit.includes(parentId)) throw new NotFoundException();
 
     const created = await this.folders.createFolder({ name, parentId: toObjectId(parentId) });
+    // A new folder immediately inherits its parent's effective grants, so anyone whose permission
+    // resolution is still cached from before this create (including the caller themselves) would
+    // have it silently missing from list()/detail() until the version bumps — this is exactly the
+    // "folder-move" class of change bumpVersion's own doc comment calls out, just at creation time.
+    await this.bumpVersionAndAudit(created._id.toString(), 'folder.created', { parentId, name });
     return this.toCreatedSummary(created);
   }
 
@@ -154,13 +166,19 @@ export class FoldersController {
     await this.requireTier(id, 'manage');
     const updated = await this.folders.renameFolder(toObjectId(id), name);
     if (!updated) throw new NotFoundException();
+    // Renaming changes neither the folder's tree position nor its grants, so no permVersion bump
+    // is needed (folder names are never part of the cached resolution) — audit only.
+    await this.auditEvents.record({ action: 'folder.renamed', targetId: toObjectId(id), metadata: { name } });
     return { id, name: updated.name };
   }
 
   @Patch(':id/move')
   async move(@Param('id') id: string, @Body() body: unknown) {
-    const { parentId } = MoveFolderRequestSchema.parse(body);
-    const { folder } = await this.requireTier(id, 'manage');
+    const parsed = MoveFolderRequestSchema.parse(body);
+    const parentId = parsed.parentId ? parsed.parentId.toLowerCase() : null;
+    // Reuses requireTier's own resolution for the destination-edit check below instead of a second
+    // findAllForTenant()+resolveForCaller() round trip — same scope, same tenant snapshot.
+    const { folder, resolution } = await this.requireTier(id, 'manage');
     const scope = this.currentScope();
 
     if (parentId === null) {
@@ -170,12 +188,14 @@ export class FoldersController {
     } else {
       // The destination must be somewhere the caller can add content — moving into a folder they
       // can't edit would let them park content somewhere they couldn't have created it directly.
-      const allFolders = await this.folders.findAllForTenant();
-      const resolution = await this.resolveForCaller(scope, allFolders);
       if (!resolution.permittedEdit.includes(parentId)) throw new NotFoundException();
     }
 
     const moved = await this.folders.moveFolder(folder._id, parentId ? toObjectId(parentId) : null);
+    // Moving a folder changes what it inherits (and, for its whole subtree, their effective
+    // grants too) — this is the canonical "folder-move" trigger bumpVersion's own doc comment
+    // names explicitly.
+    await this.bumpVersionAndAudit(id, 'folder.moved', { parentId });
     return { id, parentId: moved.parentId ? moved.parentId.toString() : null };
   }
 
@@ -194,6 +214,10 @@ export class FoldersController {
     if (children.length > 0 || containedDocuments.length > 0) throw new FolderNotEmptyError();
 
     await this.folders.deleteOne({ _id: folder._id });
+    // A deleted folder can only be reached via a fresh findAllForTenant() (never cached), so no
+    // permVersion bump is needed for correctness — audit only, matching every other manage-tier
+    // mutation in this controller.
+    await this.auditEvents.record({ action: 'folder.deleted', targetId: folder._id, metadata: {} });
     return { deleted: true };
   }
 
@@ -265,6 +289,7 @@ export class FoldersController {
   @Get(':id/effective-permission')
   async effectivePermission(@Param('id') id: string, @Query('userId') targetUserId?: string) {
     await this.requireTier(id, 'manage');
+    id = id.toLowerCase(); // canonical form — see requireTier's own comment for why
     if (!targetUserId || !OBJECT_ID_RE.test(targetUserId)) throw new BadRequestException('userId query param is required');
 
     const allFolders = await this.folders.findAllForTenant();
@@ -325,9 +350,18 @@ export class FoldersController {
     };
   }
 
-  /** 404s on: malformed id, nonexistent folder, or a folder the caller can't reach at `tier`. */
-  private async requireTier(id: string, tier: 'edit' | 'manage'): Promise<{ folder: FolderDocument }> {
+  /**
+   * 404s on: malformed id, nonexistent folder, or a folder the caller can't reach at `tier`.
+   * Returns the already-computed `resolution` too, so callers with a follow-up permission check
+   * against the same scope (move()'s destination check) don't need a second
+   * findAllForTenant()+resolveForCaller() round trip.
+   */
+  private async requireTier(id: string, tier: 'edit' | 'manage'): Promise<{ folder: FolderDocument; resolution: FolderPermissionResolution }> {
     if (!OBJECT_ID_RE.test(id)) throw new NotFoundException();
+    // Canonical lowercase form: Mongoose ObjectId#toString() always lowercases, but OBJECT_ID_RE
+    // (and the zod contracts) accept uppercase hex too — an uppercase-but-valid id would otherwise
+    // silently fail every `f._id.toString() === id` / `permittedSet.includes(id)` comparison below.
+    id = id.toLowerCase();
 
     const scope = this.currentScope();
     const allFolders = await this.folders.findAllForTenant();
@@ -338,13 +372,13 @@ export class FoldersController {
     const permittedSet = tier === 'manage' ? resolution.permittedManage : resolution.permittedEdit;
     if (!permittedSet.includes(id)) throw new NotFoundException();
 
-    return { folder };
+    return { folder, resolution };
   }
 
   private parseParentIdParam(parentIdParam: string | undefined): string | null {
     if (parentIdParam === undefined) return null; // no parentId -> roots
     if (!OBJECT_ID_RE.test(parentIdParam)) throw new BadRequestException('invalid parentId');
-    return parentIdParam;
+    return parentIdParam.toLowerCase();
   }
 
   /**

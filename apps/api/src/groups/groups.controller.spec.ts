@@ -43,13 +43,34 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
   });
 
   describe('list', () => {
-    it('returns every group as a summary', async () => {
+    it('returns every group as a summary, including memberUserIds for a group the caller belongs to', async () => {
       const group = groupDoc({ memberUserIds: [userId] });
       groups.findAllForTenant.mockResolvedValue([group]);
 
       const result = await controller.list();
 
       expect(result).toEqual([{ id: group._id.toString(), name: 'Group', memberUserIds: [userId.toString()] }]);
+    });
+
+    it('withholds memberUserIds for a group the non-admin caller does not belong to', async () => {
+      const other = newObjectId();
+      const group = groupDoc({ memberUserIds: [other] });
+      groups.findAllForTenant.mockResolvedValue([group]);
+
+      const result = await controller.list();
+
+      expect(result).toEqual([{ id: group._id.toString(), name: 'Group' }]);
+    });
+
+    it('includes memberUserIds for every group when the caller is a tenant admin', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const other = newObjectId();
+      const group = groupDoc({ memberUserIds: [other] });
+      groups.findAllForTenant.mockResolvedValue([group]);
+
+      const result = await controller.list();
+
+      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', memberUserIds: [other.toString()] }]);
     });
   });
 
