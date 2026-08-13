@@ -31,6 +31,7 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
     documents = {
       createDocument: jest.fn().mockImplementation((doc) => Promise.resolve({ _id: doc.id ?? newObjectId(), ...doc })),
       findById: jest.fn(),
+      findByFolder: jest.fn().mockResolvedValue([]),
       setLatestVersion: jest.fn().mockResolvedValue(undefined),
       deleteOne: jest.fn().mockResolvedValue(undefined),
     };
@@ -350,6 +351,54 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
 
       expect(recycleBinEntries.markPurged).not.toHaveBeenCalled();
       expect(result.verified).toBe(false);
+    });
+  });
+
+  describe('listByFolder (Phase 2 UI plan Task 1)', () => {
+    it('404s a folder the caller cannot read', async () => {
+      permissions.canRead.mockResolvedValue(false);
+
+      await expect(controller.listByFolder(folderId.toString())).rejects.toThrow(NotFoundException);
+      expect(documents.findByFolder).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty array for a readable, empty folder', async () => {
+      const result = await controller.listByFolder(folderId.toString());
+      expect(result).toEqual([]);
+    });
+
+    it('returns a summary per document, joined with its latest version', async () => {
+      const docId = newObjectId();
+      const versionId = newObjectId();
+      const createdBy = newObjectId();
+      const createdAt = new Date('2026-08-01T00:00:00Z');
+      documents.findByFolder.mockResolvedValue([
+        { _id: docId, folderId, name: 'report.pdf', status: 'indexed', latestVersionId: versionId, createdBy, createdAt },
+      ]);
+      documentVersions.findById.mockResolvedValue({ versionNumber: 2, sizeBytes: 12345 });
+
+      const result = await controller.listByFolder(folderId.toString());
+
+      expect(result).toEqual([
+        {
+          id: docId.toString(),
+          folderId: folderId.toString(),
+          name: 'report.pdf',
+          status: 'indexed',
+          latestVersionId: versionId.toString(),
+          latestVersionNumber: 2,
+          sizeBytes: 12345,
+          createdBy: createdBy.toString(),
+          createdAt,
+        },
+      ]);
+    });
+
+    it('checks readability using a lowercased folder id, tolerating an uppercase-hex URL param', async () => {
+      await controller.listByFolder(folderId.toString().toUpperCase());
+
+      expect(permissions.canRead).toHaveBeenCalledWith(folderId.toString());
+      expect(documents.findByFolder).toHaveBeenCalledWith(folderId);
     });
   });
 });

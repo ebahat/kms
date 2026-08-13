@@ -30,6 +30,9 @@ export class Document {
 
   @Prop({ required: true, type: Types.ObjectId })
   createdBy!: Types.ObjectId;
+
+  /** Populated by `timestamps: true` below, not a real `@Prop` path — declared here purely so callers get a typed field. */
+  createdAt!: Date;
 }
 
 export type DocumentDocument = HydratedDocument<Document> & { _id: Types.ObjectId };

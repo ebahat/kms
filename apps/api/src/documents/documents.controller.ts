@@ -23,6 +23,7 @@ import { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
 import {
   DeleteDocumentResponse,
+  DocumentSummary,
   DownloadDocumentResponse,
   Edition,
   PurgeRecycleBinEntryResponse,
@@ -33,6 +34,7 @@ import {
 import {
   AuditEventsRepository,
   DeletionVerificationsRepository,
+  DocumentDocument,
   DocumentsRepository,
   DocumentVersionsRepository,
   RecycleBinEntriesRepository,
@@ -164,6 +166,41 @@ export class DocumentsController {
     await this.notifications.notifyFileDeleted(existing);
 
     return { recycleBinEntryId: entry._id.toString() };
+  }
+
+  /**
+   * Read-only folder content listing (Phase 2 UI plan Task 1) — `DocumentSummary` was already
+   * defined in @kms/contracts but had no route building it; this is the first consumer. No
+   * processing-state UI (retry, sanitized failure reason) sits on top of `status` here — that's
+   * B3/B5 scope, explicitly out of bounds for this plan.
+   */
+  @Get('folders/:id/documents')
+  async listByFolder(@Param('id') folderId: string): Promise<DocumentSummary[]> {
+    // Canonical lowercase form: DocumentsPermissionsService.canRead() does an in-memory
+    // `_id.toString() === folderId` comparison against Mongoose's always-lowercase toString(), so
+    // an uppercase-but-valid folder id would otherwise be silently denied (same class of bug fixed
+    // in FoldersController — see that plan's Task 7 report).
+    const normalizedFolderId = folderId.toLowerCase();
+    const canRead = await this.permissions.canRead(normalizedFolderId);
+    if (!canRead) throw new NotFoundException();
+
+    const documents = await this.documents.findByFolder(toObjectId(normalizedFolderId));
+    return Promise.all(documents.map((doc) => this.toDocumentSummary(doc)));
+  }
+
+  private async toDocumentSummary(doc: DocumentDocument): Promise<DocumentSummary> {
+    const latestVersion = await this.documentVersions.findById(doc.latestVersionId);
+    return {
+      id: doc._id.toString(),
+      folderId: doc.folderId.toString(),
+      name: doc.name,
+      status: doc.status,
+      latestVersionId: doc.latestVersionId.toString(),
+      latestVersionNumber: latestVersion?.versionNumber ?? 0,
+      sizeBytes: latestVersion?.sizeBytes ?? 0,
+      createdBy: doc.createdBy.toString(),
+      createdAt: doc.createdAt,
+    };
   }
 
   /** Recycle-bin operations are admin-only (PRD §7: "tenant admins can restore from or purge the recycle bin early"). */
