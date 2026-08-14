@@ -13,5 +13,8 @@ infra/**/*.tfstate
 infra/**/*.tfstate.backup
 infra/**/.terraform.lock.hcl
 .playwright-mcp/
+test-results/
+playwright-report/
+blob-report/
 .omc/
 .worktrees/

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { GroupsRepository, EventsRepository, TasksRepository, SCOPE_CLS_KEY, Scope, newObjectId } from '@kms/data';
+import { FoldersRepository, GroupsRepository, EventsRepository, TasksRepository, SCOPE_CLS_KEY, Scope, newObjectId } from '@kms/data';
 import { SessionService, REALM_COOKIE_NAME } from '@kms/auth';
 import { CURRENT_TOS_VERSION } from '@kms/contracts';
 import { SESSION_SERVICE } from '../../src/auth/session-auth.guard';
@@ -66,6 +66,36 @@ export async function seedTask(
       createdBy: opts.createdBy,
     }),
   );
+}
+
+/**
+ * Seeds a folder via FoldersRepository.createFolder() (real depth/cardinality checks, real path
+ * computation) — not a raw model insert. `isPublic`/`grants` are applied as follow-up repository
+ * calls (upsertGrant/setPublic) so hasExplicitGrants flips exactly the way the real controller
+ * routes would flip it, for the Phase 2 UI plan's permission-matrix suite (Task 7).
+ */
+export async function seedFolder(
+  app: INestApplication,
+  opts: {
+    tenantId: ObjectId;
+    parentId?: ObjectId | null;
+    name?: string;
+    isPublic?: boolean;
+    grants?: { principalType: 'user' | 'group'; principalId: ObjectId; access: 'read' | 'edit' | 'manage' }[];
+  },
+) {
+  const cls = app.get(ClsService);
+  const folders = app.get(FoldersRepository);
+  const scope = scopeFor(opts.tenantId, newObjectId());
+
+  return withScope(cls, scope, async () => {
+    const folder = await folders.createFolder({ name: opts.name ?? 'Test Folder', parentId: opts.parentId ?? null });
+    if (opts.isPublic) await folders.setPublic(folder._id, true);
+    if (opts.grants) {
+      for (const grant of opts.grants) await folders.upsertGrant(folder._id, grant);
+    }
+    return (await folders.findById(folder._id))!;
+  });
 }
 
 export interface SessionFixture {

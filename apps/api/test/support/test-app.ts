@@ -29,7 +29,7 @@ export interface TestAppContext {
 const TEST_KMS_MASTER_KEY_HEX = '22'.repeat(32);
 const TEST_PASSWORD_PEPPER = 'integration-test-pepper';
 
-export async function buildTestApp(): Promise<TestAppContext> {
+export async function buildTestApp(opts: { corsOrigin?: string } = {}): Promise<TestAppContext> {
   const mongod = await MongoMemoryServer.create();
   process.env.MONGO_URI = mongod.getUri();
   process.env.KMS_MASTER_KEY_HEX = TEST_KMS_MASTER_KEY_HEX;
@@ -47,6 +47,13 @@ export async function buildTestApp(): Promise<TestAppContext> {
 
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   app.use(cookieParser());
+  // Must run before init() — Express wires CORS as ordered middleware, so enabling it after
+  // init() (once routing is already bound) silently no-ops and preflight OPTIONS 404s. Opt-in
+  // only (undefined by default): apps/api/src/main.ts itself enables no CORS at all (same-origin
+  // assumed today), and every existing integration spec calls buildTestApp() through supertest
+  // directly against the Nest app instance, which never goes through a browser's CORS layer
+  // anyway — this only matters for the Phase 2 UI plan's dev-server.ts harness.
+  if (opts.corsOrigin) app.enableCors({ origin: opts.corsOrigin, credentials: true });
   await app.init();
 
   return { app, mongod };

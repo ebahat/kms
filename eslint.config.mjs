@@ -67,4 +67,14 @@ export default [
       '@typescript-eslint/no-unused-vars': 'off',
     },
   },
+  // apps/web's lint script scopes to the whole package dir (`.`, unlike every other app's `src`
+  // scope — there's no src/ under Next.js App Router), which newly exposes root-level CommonJS
+  // config files like jest.config.js to linting. Only that file (and the class of tooling config
+  // it represents) needs Node's `module`/`require` globals; nothing else in this codebase is CJS.
+  {
+    files: ['**/jest.config.js'],
+    languageOptions: {
+      globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
+    },
+  },
 ];
