@@ -1,9 +1,9 @@
 # OCI infrastructure migration — 2026-08-15
 
-**Status:** IN PROGRESS — Tasks 1–7 complete (code + all 5 Terraform modules + docs), Task 8
-(`terraform validate`/`plan` against a real tenancy) blocked on the user creating the OCI tenancy.
-Scoping resolved 2026-08-15 (see "Resolved scoping decisions" below) — Frankfurt region, single
-environment.
+**Status:** DONE (2026-08-16). All 8 tasks complete on branch `oci-infra-migration` (off
+`main@9856819`). `terraform plan` against the user's real OCI tenancy: 52 to add, 0 errors. Scoping
+resolved 2026-08-15 — Frankfurt region, single environment. **`terraform apply` was not run** —
+provisioning real resources needs a separate explicit go-ahead.
 
 **Scope:** Implements [ADR-0014](../adr/0014-hosting-topology-oci.md) (supersedes ADR-0007, rebinds
 ADR-0006's cloud-specific primitives). Two deliverables: (1) an `OciStorageProvider` implementing the
@@ -74,9 +74,22 @@ existing `infra/` (GCP modules, for structural precedent — network/redis/gcs/s
   `docs/architecture/system-overview.md`'s ADR index updated (0007 → Superseded, 0006 → rebound, 0014
   added). CI auth mechanism (OIDC vs. scoped API key) explicitly left undecided — noted inline in
   `main.tf`'s provider block comment, not silently assumed.
-- [ ] **Task 8 — Final review**: `terraform validate` + `terraform plan` against a real (user-created)
-  tenancy/compartment to confirm the HCL is structurally sound — this is the first point real OCI
-  credentials are needed. Full review pass matching this project's established Task-8 precedent.
+- [DONE] **Task 8 — Final review**: `terraform validate` + `terraform plan` run 2026-08-16 against
+  the user's real OCI tenancy (compartment `...jds5jvcolzrduxxmfsyk5cidvotzl7mmdzsphracwzmbuqha4z7a`,
+  region `eu-frankfurt-1`, namespace `axjceqpmgl6l` — confirmed live by `oci os ns get` authenticating
+  successfully). `validate`: clean, zero errors. `plan`: **52 to add, 0 to change, 0 to destroy, 0
+  errors, 0 warnings** — every module (network/cache/object-storage/vault/compute, including the
+  security-review-corrected WAF) resolved cleanly, confirming every `UNVERIFIED`-flagged resource
+  argument in the code is in fact real and correctly shaped against the live provider schema.
+  Process note: the first `terraform plan` attempt was silently truncated to 81 of 1717 real lines by
+  the `rtk` CLI proxy before it ever reached disk (confirmed via `wc -c`/`md5` on the truncated file —
+  not a display artifact, the truncation marker was baked into the file itself) — re-ran via
+  `rtk proxy terraform plan` to get the untruncated output before trusting a "clean" result; this
+  matters because silently trusting a truncated view of a plan against a real, billable account would
+  have been a real risk, not a cosmetic one. Plan output files deleted after review (contained the
+  real compartment OCID and full resource attribute lists — not committed).
+  **`terraform apply` was NOT run** — provisioning real, cost-incurring resources needs a separate,
+  explicit go-ahead per this project's standing rule on hard-to-reverse/cost-incurring actions.
 
 ## Explicitly out of scope
 
