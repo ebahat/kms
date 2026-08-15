@@ -1,4 +1,6 @@
 import { Storage, Bucket } from '@google-cloud/storage';
+import * as objectstorage from 'oci-objectstorage';
+import * as common from 'oci-common';
 
 export const SIGNED_URL_TTL_MS = 5 * 60_000; // ADR-0006: 5 minutes, issued per click, never stored
 
@@ -123,5 +125,99 @@ export class GcsStorageProvider implements StorageProvider {
 
   async deleteObject(key: string): Promise<void> {
     await this.bucket.file(key).delete({ ignoreNotFound: true });
+  }
+}
+
+/**
+ * Production binding for OCI Object Storage (ADR-0014, rebinding ADR-0006 off GCS). Uses instance
+ * principals — the OCI equivalent of GCS's Application Default Credentials — so no static key file
+ * needs to live on the deployed instance; construct via {@link OciStorageProvider.withInstancePrincipals}
+ * rather than the constructor directly, since resolving that identity is inherently async. Not
+ * exercised by any test — same reasoning as GcsStorageProvider: uninstantiable without live OCI
+ * credentials, which this environment doesn't have.
+ *
+ * Known divergence from GcsStorageProvider, not a bug: GCS's V4 signed URLs accept a
+ * `responseDisposition` override *at signing time*, so a fresh Content-Disposition (with the
+ * caller-supplied display filename) can be set on every download. OCI pre-authenticated requests
+ * (PARs) have no equivalent — Content-Disposition can only be set as object metadata *at upload
+ * time* (`putObject`'s `contentDisposition` field) and is then fixed for the object's lifetime. Since
+ * `StorageProvider.putObject` doesn't receive a display filename (only `contentType`), this binding
+ * sets a generic `attachment` disposition at upload time — that alone still satisfies sec §4.4's
+ * "never render inline" requirement, but the caller-supplied `displayFilename` passed to
+ * `getSignedDownloadUrl` is accepted for interface compatibility only and has no effect on what
+ * filename the browser shows. Threading the real filename through would require extending
+ * `StorageProvider.putObject`'s signature — deliberately not done here to avoid changing the shared
+ * interface for a binding nothing currently deploys against; revisit if/when OCI becomes the actual
+ * production target with a real filename-on-download requirement.
+ */
+export class OciStorageProvider implements StorageProvider {
+  private readonly client: objectstorage.ObjectStorageClient;
+
+  constructor(
+    private readonly namespace: string,
+    private readonly bucketName: string,
+    private readonly region: string,
+    authenticationDetailsProvider: common.AuthenticationDetailsProvider,
+  ) {
+    this.client = new objectstorage.ObjectStorageClient({ authenticationDetailsProvider });
+  }
+
+  /** Resolves the instance-principal identity (async by nature) before constructing the client. */
+  static async withInstancePrincipals(namespace: string, bucketName: string, region: string): Promise<OciStorageProvider> {
+    const provider = await new common.InstancePrincipalsAuthenticationDetailsProviderBuilder().build();
+    return new OciStorageProvider(namespace, bucketName, region, provider);
+  }
+
+  async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
+    await this.client.putObject({
+      namespaceName: this.namespace,
+      bucketName: this.bucketName,
+      objectName: key,
+      putObjectBody: data,
+      contentLength: data.length,
+      contentType: opts.contentType,
+      // Generic, filename-less attachment disposition — see class doc comment for why a real
+      // per-download filename can't be threaded through here the way GCS's signed URLs support.
+      contentDisposition: 'attachment',
+    });
+  }
+
+  async getSignedDownloadUrl(key: string, _opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+    const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
+    const response = await this.client.createPreauthenticatedRequest({
+      namespaceName: this.namespace,
+      bucketName: this.bucketName,
+      createPreauthenticatedRequestDetails: {
+        // Unique per issuance (never reused/stored, matches ADR-0006's "issued per click" rule) —
+        // the name is OCI-internal bookkeeping, never shown to the end user.
+        name: `download-${key}-${Date.now()}`,
+        objectName: key,
+        accessType: objectstorage.models.CreatePreauthenticatedRequestDetails.AccessType.ObjectRead,
+        timeExpires: expiresAt,
+      },
+    });
+    const url = `https://objectstorage.${this.region}.oraclecloud.com${response.preauthenticatedRequest.accessUri}`;
+    return { url, expiresAt };
+  }
+
+  async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.client.headObject({ namespaceName: this.namespace, bucketName: this.bucketName, objectName: key });
+      return true;
+    } catch (err) {
+      if (err instanceof common.OciError && err.statusCode === 404) return false;
+      throw err;
+    }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    try {
+      await this.client.deleteObject({ namespaceName: this.namespace, bucketName: this.bucketName, objectName: key });
+    } catch (err) {
+      // Idempotent: deleting an already-absent key is not an error (mirrors GcsStorageProvider's
+      // ignoreNotFound: true) — a retried purge must not fail.
+      if (err instanceof common.OciError && err.statusCode === 404) return;
+      throw err;
+    }
   }
 }
