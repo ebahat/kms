@@ -1,6 +1,6 @@
 # Phase 2 UI — Folder tree, permission management, groups — 2026-08-13
 
-**Status:** DRAFT. Not yet executed.
+**Status:** DONE (2026-08-15). All 8 tasks complete on branch `phase-2-ui-folder-permissions` (off `main@a55f580`); full workspace check (`build lint test:unit test:integration`) 32/32 green. Not yet merged to `main` — awaiting explicit go-ahead. See Task 8 note at the end of this file for the closing review/merge-readiness summary.
 
 **Scope:** `docs/plans/implementation-phases-11-07-2026-plan.md`'s Phase 2 items 2.6 (UI) and 2.7 (tests),
 narrowed to the folder/group management surface that `docs/plans/phase-2-folder-group-management-12-08-2026-plan.md`
@@ -134,3 +134,46 @@ the SDD ledger, report merge-readiness. Merging to `main` is the user's call, no
 - Dark mode, mobile drill-down layout (UI spec open questions 1/2) — not decided yet, not blocking.
 - Full live-Atlas verification — Task 7.2's harness is real Mongo/Redis, but still ephemeral/local, not
   Atlas; the CLAUDE.md-documented "never run against production-shaped data" caveat still applies.
+
+## Task 8 closing note (2026-08-15)
+
+Launched `/code-review main...phase-2-ui-folder-permissions --level medium` as a forked background
+review dispatching parallel per-angle sub-agents (removed-behavior audit, cross-file call-site tracer,
+reuse/duplication scan, simplification scan, efficiency scan, altitude/bandaid scan, CLAUDE.md
+conventions check). **The review did not complete**: the account hit its monthly API spend limit
+mid-run, and every angle except one returned `"You've hit your monthly spend limit"` with no findings.
+Retrying was not attempted — this is an account-level cap, not a transient failure a retry would clear.
+
+The one angle that finished before the limit hit — a removed/narrowed-behavior audit diffing against
+the pre-change code — surfaced one real, verified issue:
+
+**Authorization gap in `FolderSummary.path` (fixed, commit `f7c7278`):** Task 3's breadcrumb resolved
+ancestor folder names from `folderNameLookup(allFolders)`, built from *every* folder in the tenant,
+unfiltered by the caller's own `permittedRead`. Because permission resolution is override-not-merge
+(ADR-0005), a folder can be independently readable via its own explicit grant while its ancestors are
+not — every other field/route in `FoldersController` treats "no read access" as "no data, 404 only,"
+and this one didn't: it disclosed an unreadable ancestor's name (and, via the web breadcrumb's link,
+its existence — confirmed the link would itself 404 on click) to a caller who couldn't otherwise see it.
+Fixed by filtering `folder.path` to `resolution.permittedRead` before resolving names, in both `list()`
+and `detail()` (they share `toSummary()`). Two new regression tests added
+(`folders.controller.spec.ts`) covering the exact scenario (a root/mid folder with no grants, a leaf
+folder readable only via its own override) via both routes. Full workspace check re-verified 32/32 after
+the fix (isolated `test:unit` 254/254, isolated `test:integration` 21/21 — the first combined run showed
+spurious timeouts under CPU contention when integration tests ran alongside unit tests, the same class of
+flake documented in the backend plan's own Task 1; isolated and re-combined runs confirmed clean).
+
+**What did NOT get reviewed, because their agents never ran:** reuse/duplication across the new
+`folders-api.ts`/`groups-api.ts` clients, simplification opportunities, efficiency (e.g. repeated
+`findAllForTenant()` calls per request), "altitude"/band-aid-fix patterns, and CLAUDE.md convention
+adherence. This plan's own code was still built and self-reviewed carefully task-by-task throughout
+(each task's ledger entry above records self-caught corrections — the `ApiError#message` bug, the
+`DecidingGrant` shape, the Groups-nav-admin assumption, the CORS middleware-ordering bug), but a
+dedicated cross-cutting pass on those specific angles is genuinely missing, not just unreported.
+
+**Merge-readiness:** code is correct and tested as far as it's been exercised (32/32 across build/lint/
+unit/integration, plus a real Playwright browser pass), and the one concrete finding the partial review
+did surface is fixed and covered by new tests. But this branch has **not** had the full multi-angle
+review the backend-plan precedent (and this plan's own Task 8 text) called for — only 1 of ~7 angles
+ran. Recommend either re-running `/code-review` once the spend limit resets, or accepting this as
+sufficient given the task-by-task self-review discipline already applied. **Not merged to `main`** —
+merging remains the user's explicit call, not made unilaterally, per standing instruction.
