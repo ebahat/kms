@@ -164,15 +164,64 @@ resource "oci_load_balancer_listener" "svc" {
   protocol                 = "HTTP"
 }
 
-# WAF (sec §6 — Task 6 originally called for this alongside the LB; added here rather than left as a
-# pure gap, since minimal OCI WAF policy shape is well-documented). Uses OCI's preconfigured
-# protection-rule defaults, not custom rules — same "managed rules, tune after first traffic" posture
-# ADR-0007's Cloud Armor entry described. UNVERIFIED: `default_action_name` referencing a
-# not-explicitly-defined "allow_action" is per the registry example; confirm this resolves to a real
-# built-in action (not a dangling reference) at Task 8's first `terraform validate`.
+# WAF (sec §6 — Task 6 originally called for this alongside the LB).
+#
+# CORRECTION (security review caught this, 2026-08-15): the first version of this resource declared
+# only `request_access_control { default_action_name = "allow_action" }` with no `actions` block
+# defining what "allow_action" even was, and — critically — no `request_protection` block at all.
+# That's not a WAF, it's a resource that satisfies "a WAF exists" on paper while blocking nothing:
+# default-allow with zero inspection rules is an ineffective control, arguably worse than having none
+# (false confidence). Fixed below by defining real named actions and wiring a `request_protection`
+# block that actually references OCI's managed protection capabilities (the OWASP-CRS-style rule
+# groups — SQLi/XSS/RCE detection).
+#
+# UNVERIFIED, flag for Task 8: the exact `protection_capabilities` `key` values below (920130/941110/
+# 930100) are cited from Oracle's own documented example set for SQLi/XSS/RCE detection, but this
+# repo has no way to independently confirm they're the current, correct capability ids for this OCI
+# tenancy's WAF catalog without a live `oci waf protection-capability list` call. Confirm and adjust
+# at Task 8's first `terraform validate` — don't assume these three ids are complete or current
+# coverage; they're a starting point; a real production tuning pass belongs in the P6.2 audit gate.
 resource "oci_waf_web_app_firewall_policy" "public" {
   compartment_id = var.compartment_id
   display_name   = "kms-${var.env}-waf-policy"
+
+  actions {
+    name = "allow_action"
+    type = "ALLOW"
+  }
+
+  actions {
+    name = "block_action"
+    type = "RETURN_HTTP_RESPONSE"
+    code = "403"
+    body {
+      type = "STATIC_TEXT"
+      text = "Request blocked by WAF"
+    }
+  }
+
+  request_protection {
+    rules {
+      name                       = "core-protection"
+      type                       = "PROTECTION_RULE"
+      action_name                = "block_action"
+      is_body_inspection_enabled = true
+
+      protection_capabilities {
+        key     = "920130" # SQL injection detection (OCI managed capability)
+        version = "1"
+      }
+      protection_capabilities {
+        key     = "941110" # XSS detection (OCI managed capability)
+        version = "1"
+      }
+      protection_capabilities {
+        key     = "930100" # Remote code execution / path traversal (OCI managed capability)
+        version = "1"
+      }
+    }
+  }
+
   request_access_control {
     default_action_name = "allow_action"
   }

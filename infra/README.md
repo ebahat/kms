@@ -50,9 +50,14 @@ infra/
   the pipeline's index stage already deletes these directly, so this was always a belt-and-suspenders
   backstop, not load-bearing, but it's a real, deliberate omission, not an oversight to silently paper
   over.
-- **Retention-rule locking, vault secret creation, LB/WAF output attributes and the WAF policy's
-  `default_action_name` reference**: each flagged inline with `UNVERIFIED` where the exact behavior
-  wasn't confirmed against the registry docs.
+- **Retention-rule locking, vault secret creation, LB output attributes**: each flagged inline with
+  `UNVERIFIED` where the exact behavior wasn't confirmed against the registry docs.
+- **WAF protection-capability ids** (`920130`/`941110`/`930100` in the compute module — SQLi/XSS/RCE
+  detection): a security review of an earlier commit caught that the first version of this resource
+  was default-allow with zero inspection rules — fixed to actually wire OCI's managed protection
+  capabilities, but the exact capability ids are cited from Oracle's documented examples, not
+  independently confirmed against this tenancy's live catalog. Confirm at Task 8; treat as a starting
+  point, not complete production coverage.
 
 ## Sequencing
 
