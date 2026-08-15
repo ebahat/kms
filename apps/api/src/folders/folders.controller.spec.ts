@@ -138,6 +138,27 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
         { id: parent._id.toString(), name: 'Mid' },
       ]);
     });
+
+    it('omits unreadable ancestors from the path instead of leaking their name/existence', async () => {
+      // Root: no grants, not public. Sub: inherits Root (still unreadable). Deep: explicit grant
+      // for userId only (override-not-merge, so Deep's readability doesn't imply Sub's or Root's).
+      const root = folderDoc({ name: 'Executive Comp Planning', hasExplicitGrants: false, isPublic: false });
+      const sub = folderDoc({ name: '2026 Raises', parentId: root._id, path: [root._id], hasExplicitGrants: false });
+      const deep = folderDoc({
+        name: 'Finalists',
+        parentId: sub._id,
+        path: [root._id, sub._id],
+        hasExplicitGrants: true,
+        grants: [{ principalType: 'user', principalId: userId, access: 'read' }],
+      });
+      folders.findAllForTenant.mockResolvedValue([root, sub, deep]);
+
+      const result = await controller.list(sub._id.toString());
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe(deep._id.toString());
+      expect(result[0].path).toEqual([]);
+    });
   });
 
   describe('detail', () => {
@@ -182,6 +203,23 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(result.tier).toBe('manage');
       expect(result.grants).toEqual([{ principalType: 'user', principalId: userId.toString(), access: 'manage' }]);
+    });
+
+    it('omits unreadable ancestors from the path (same leak as list(), reached via GET /folders/:id)', async () => {
+      const root = folderDoc({ name: 'Executive Comp Planning', hasExplicitGrants: false, isPublic: false });
+      const sub = folderDoc({ name: '2026 Raises', parentId: root._id, path: [root._id], hasExplicitGrants: false });
+      const deep = folderDoc({
+        name: 'Finalists',
+        parentId: sub._id,
+        path: [root._id, sub._id],
+        hasExplicitGrants: true,
+        grants: [{ principalType: 'user', principalId: userId, access: 'read' }],
+      });
+      folders.findAllForTenant.mockResolvedValue([root, sub, deep]);
+
+      const result: any = await controller.detail(deep._id.toString());
+
+      expect(result.path).toEqual([]);
     });
 
     it('finds the folder when the id in the URL is uppercase hex (case-insensitive match)', async () => {

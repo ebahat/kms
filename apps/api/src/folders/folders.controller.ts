@@ -437,10 +437,15 @@ export class FoldersController {
       broaderThanParent: widening?.broaderThanParent ?? false,
       addedGroups: (widening?.addedGroups ?? []).map((groupId) => groupNames.get(groupId) ?? groupId),
       becamePublic: widening?.becamePublic ?? false,
-      path: folder.path.map((ancestorId) => {
-        const ancestorIdString = ancestorId.toString();
-        return { id: ancestorIdString, name: folderNames.get(ancestorIdString) ?? ancestorIdString };
-      }),
+      // Filtered to the caller's own permittedRead — folder.path is the raw ancestor chain
+      // regardless of grants, and (override-not-merge) a deep folder's own explicit grant can be
+      // readable while an ancestor is not. Every other field/route in this controller enforces
+      // "no read access -> no data, no 404 leak"; an unfiltered ancestor here would disclose a
+      // folder's name (and, via the breadcrumb link, its existence) to a caller who can't reach it.
+      path: folder.path
+        .map((ancestorId) => ancestorId.toString())
+        .filter((ancestorIdString) => resolution.permittedRead.includes(ancestorIdString))
+        .map((ancestorIdString) => ({ id: ancestorIdString, name: folderNames.get(ancestorIdString) ?? ancestorIdString })),
     };
   }
 
