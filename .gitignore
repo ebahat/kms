@@ -12,6 +12,12 @@ infra/**/.terraform/
 infra/**/*.tfstate
 infra/**/*.tfstate.backup
 infra/**/.terraform.lock.hcl
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+infra-gcp-superseded/**/.terraform/
+infra-gcp-superseded/**/*.tfstate
+infra-gcp-superseded/**/*.tfstate.backup
+infra-gcp-superseded/**/.terraform.lock.hcl
 .playwright-mcp/
 test-results/
 playwright-report/

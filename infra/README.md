@@ -1,32 +1,56 @@
-# Infra (Terraform) — ADR-0007 topology
+# Infra (Terraform) — ADR-0014 topology (OCI)
 
-**Status:** module skeleton only. `terraform apply` is not runnable yet — it needs real values this
-repo cannot supply:
+**Status:** module skeleton only, ported from `infra-gcp-superseded/` (kept for historical reference,
+not deleted — see [ADR-0014](../docs/adr/0014-hosting-topology-oci.md)). `terraform apply` is not
+runnable yet — it needs real values this repo cannot supply, and this HCL has not been run through
+`terraform validate`/`plan` at all (no `terraform` CLI or OCI credentials exist in this environment —
+same caveat the GCP skeleton carried). Several resource arguments are flagged inline as unverified;
+search this directory for `UNVERIFIED` before the first real `terraform validate`.
 
-- GCP project id(s) for `kms-staging` / `kms-prod` (sec §10: full environment separation)
-- Billing account id
-- A domain for the LB (`api.<domain>`, `admin.<domain>`, `app.<domain>`)
-- Atlas project/org id + API keys (Atlas itself is managed outside this Terraform; PSC peering
-  parameters come from the Atlas side)
+Prerequisites (see `docs/deployment/gcp-aws-deployment-guide-11-08-2026.md`'s OCI section for the full
+account-setup runbook):
 
-Fill these into `terraform.tfvars` (gitignored) before the first `terraform plan`.
+- An OCI tenancy with a budget alert set (Oracle's Always Free tier has already been cut once — don't
+  assume it's permanent for anything long-term-load-bearing)
+- A compartment created for this project (`compartment_id`)
+- The tenancy's Object Storage namespace (`oci os ns get`) — reused for both the data/audit buckets
+  and OCIR (they share a namespace)
+- A domain for the LB (`api.<domain>`, `admin.<domain>`, `app.<domain>` — see the compute module's own
+  note on why hostname-based routing isn't actually wired yet, only per-port listeners)
+- An Atlas project/org id + API keys (Atlas itself is managed outside this Terraform, same as the GCP
+  skeleton — no OCI PrivateLink equivalent is used at this scale, ADR-0014)
+
+Fill these into `terraform.tfvars` (gitignored, see `terraform.tfvars.example`) before the first
+`terraform plan`.
 
 ## Layout
 
 ```
 infra/
-  versions.tf       provider requirements
-  variables.tf      project/region/env inputs
-  main.tf           root module wiring the pieces below
+  versions.tf       provider requirements (oracle/oci)
+  variables.tf       compartment/region/env/domain/namespace inputs
+  main.tf            root module wiring the pieces below
   modules/
-    network/        VPC + snet-parse/snet-ai/snet-index + firewall egress rules
-    redis/          Memorystore x2: redis-app (volatile-lru) + redis-queue (noeviction)
-    gcs/            kms-{env}-data + kms-{env}-audit buckets, CMEK
-    secrets/        Secret Manager + KMS keyring
-    cloud-run/      six services + clamd, per-service SAs, subnet egress binding
+    network/         VCN + subnet-parse/ai/index/app/public, NSGs, NAT+service gateway
+    cache/            OCI Cache with Redis x2: redis-app + redis-queue
+    object-storage/   kms-{env}-data + kms-{env}-audit buckets, KMS-encrypted
+    vault/            OCI Vault: KMS keys (TOTP envelope, storage encryption) + secrets
+    compute/          six Container Instances + clamd + a public LB (api/portal-api/web only)
 ```
+
+## Known gaps vs. the GCP skeleton, not silently equivalent
+
+- **Reachability**: Cloud Run services get a public URL automatically; Container Instances don't —
+  this port includes an actual LB (the GCP skeleton didn't have one at all, deferred entirely). See
+  the compute module's own comment for what's simplified about it (per-port listeners, not real
+  hostname-based routing yet).
+- **Redis eviction policy**: GCP's `redis_configs { maxmemory-policy = ... }` has no confirmed OCI
+  Cache equivalent in this pass — flagged in the cache module, not silently assumed working.
+- **Retention-rule locking, vault secret creation, LB output attributes**: each flagged inline with
+  `UNVERIFIED` where the exact behavior wasn't confirmed against the registry docs.
 
 ## Sequencing
 
-Apply against `kms-staging` first (Phase 0 exit criterion: hello-world revisions of all six
-services + clamd deploy from CI). Production apply is a Phase 6 gate.
+Same as before: apply against the single environment first (no staging/prod split yet — ADR-0014
+scoping decision), confirm hello-world container instances + the LB respond, then revisit whether a
+staging split is worth adding before a real production cutover.

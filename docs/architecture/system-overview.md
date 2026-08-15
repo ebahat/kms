@@ -173,13 +173,14 @@ flowchart LR
 | [0003 — Ingestion pipeline (BullMQ)](../adr/0003-ingestion-pipeline.md) | Accepted |
 | [0004 — AuthN, sessions & platform-admin realm](../adr/0004-authn-and-sessions.md) | Accepted |
 | [0005 — RBAC folder permissions & resolution](../adr/0005-rbac-folder-permissions.md) | Accepted |
-| [0006 — File storage & serving (GCS)](../adr/0006-file-storage-and-serving.md) | Accepted |
-| [0007 — Hosting topology (GCP / Cloud Run)](../adr/0007-hosting-topology-gcp.md) | Accepted |
+| [0006 — File storage & serving (GCS)](../adr/0006-file-storage-and-serving.md) | Accepted, rebound to OCI primitives by 0014 |
+| [0007 — Hosting topology (GCP / Cloud Run)](../adr/0007-hosting-topology-gcp.md) | Superseded by 0014 |
 | [0008 — LLM/embedding providers + Hebrew benchmark gate](../adr/0008-llm-embedding-providers.md) | Accepted (gated on Hebrew benchmark) |
 | [0009 — Repo layout & edition gating](../adr/0009-repo-layout-and-edition-gating.md) | Accepted |
 | [0010 — Schema migrations & data backfills](../adr/0010-schema-migrations-and-backfills.md) | Accepted (written without a live-cluster tooling spike — see its Status section) |
 | [0012 — Module entitlement mechanism](../adr/0012-module-entitlement.md) | Accepted |
 | [0013 — Transactional email provider selection](../adr/0013-email-provider.md) | Accepted |
+| [0014 — Hosting topology (OCI)](../adr/0014-hosting-topology-oci.md) | Accepted |
 
 Future-ADR candidates (recorded, not opened; triggers in the [design-review record](design-review-2026-07-10.md) where noted):
 
