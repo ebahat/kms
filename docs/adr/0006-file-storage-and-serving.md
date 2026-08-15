@@ -9,6 +9,13 @@
 
 Accepted 2026-07-10 — step-6 consistency review passed; review fixes applied (findings record in the plan). Assumes GCP/GCS per the plan's cloud direction; bucket/IAM mechanics finalize with ADR-0007.
 
+**Rebound 2026-08-15 by [ADR-0014](0014-hosting-topology-oci.md)** — hosting moved to OCI (ADR-0007
+superseded), so the GCP-specific primitives referenced below (GCS, Cloud KMS, Secret Manager) become
+OCI Object Storage, OCI Vault, and OCI Vault secrets respectively. This ADR's own decisions — bucket
+layout, upload-through-the-API path, signed-URL semantics, deletion-verification machinery — are
+**not** reopened; ADR-0014's "What ADR-0006 keeps vs. what rebinds" section is the authoritative map
+of what changed vs. what didn't.
+
 ## Context
 
 Object storage holds original files (all retained versions, PRD §8), OCR outputs (PRD §9/§15), pipeline stage artifacts (ADR-0003), and audit exports (sec §8.1). Constraints:

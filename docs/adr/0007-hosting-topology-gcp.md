@@ -1,11 +1,17 @@
 # ADR-0007: Hosting Topology on GCP (europe-west)
 
-**Status:** Accepted (2026-07-10)
+**Status:** Superseded by [ADR-0014](0014-hosting-topology-oci.md) (2026-08-15)
 **Date:** 2026-07-10
 **Deciders:** Product owner (Ehud); drafted in the architecture/ADR pass
 **Sources:** PRD §3, §5, §13; sec §4.4, §6, §7.4, §8.3; ADR-0003 (worker pools), ADR-0004 (Redis sessions), ADR-0006 (buckets); plan interview (lean GCP, europe-west)
 
 ## Status
+
+**Superseded 2026-08-15 by [ADR-0014](0014-hosting-topology-oci.md)** — production hosting moves to
+OCI, primarily on cost grounds for this app's specific shape (two Redis instances, egress-heavy file
+serving). Nothing here was ever applied (`infra/`'s Terraform, matching this ADR, was never
+`terraform apply`'d), so this is a decision reversal with zero migration cost. Kept below for historical
+context and because ADR-0014 mirrors this ADR's structure component-by-component.
 
 Accepted 2026-07-10 — step-6 consistency review passed; review fixes applied (findings record in the plan). Cloud = GCP and region = europe-west are directional decisions from the planning interview (Google Vision is already a Classic-OCR candidate, PRD §2/§16); this ADR fixes the topology within them.
 
