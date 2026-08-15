@@ -32,7 +32,7 @@ existing `infra/` (GCP modules, for structural precedent — network/redis/gcs/s
 
 ## Tasks
 
-- [ ] **Task 1 — `OciStorageProvider`**: implement `apps/api/src/documents/storage/storage-provider.ts`'s
+- [DONE] **Task 1 — `OciStorageProvider`**: implement `apps/api/src/documents/storage/storage-provider.ts`'s
   fourth binding (alongside `FakeStorageProvider`/`GcsStorageProvider`), using `oci-sdk`'s
   `oci-objectstorage` package. Same 4 methods (`putObject`, `getSignedDownloadUrl` via OCI
   pre-authenticated requests, `objectExists`, `deleteObject`), same `attachment`-forcing
