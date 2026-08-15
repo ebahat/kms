@@ -164,6 +164,28 @@ resource "oci_load_balancer_listener" "svc" {
   protocol                 = "HTTP"
 }
 
+# WAF (sec §6 — Task 6 originally called for this alongside the LB; added here rather than left as a
+# pure gap, since minimal OCI WAF policy shape is well-documented). Uses OCI's preconfigured
+# protection-rule defaults, not custom rules — same "managed rules, tune after first traffic" posture
+# ADR-0007's Cloud Armor entry described. UNVERIFIED: `default_action_name` referencing a
+# not-explicitly-defined "allow_action" is per the registry example; confirm this resolves to a real
+# built-in action (not a dangling reference) at Task 8's first `terraform validate`.
+resource "oci_waf_web_app_firewall_policy" "public" {
+  compartment_id = var.compartment_id
+  display_name   = "kms-${var.env}-waf-policy"
+  request_access_control {
+    default_action_name = "allow_action"
+  }
+}
+
+resource "oci_waf_web_app_firewall" "public" {
+  compartment_id             = var.compartment_id
+  display_name               = "kms-${var.env}-waf"
+  backend_type                = "LOAD_BALANCER"
+  load_balancer_id            = oci_load_balancer_load_balancer.public.id
+  web_app_firewall_policy_id  = oci_waf_web_app_firewall_policy.public.id
+}
+
 output "lb_public_ip" {
   value = oci_load_balancer_load_balancer.public.ip_address_details[0].ip_address
 }

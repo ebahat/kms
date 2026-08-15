@@ -35,7 +35,7 @@ infra/
     cache/            OCI Cache with Redis x2: redis-app + redis-queue
     object-storage/   kms-{env}-data + kms-{env}-audit buckets, KMS-encrypted
     vault/            OCI Vault: KMS keys (TOTP envelope, storage encryption) + secrets
-    compute/          six Container Instances + clamd + a public LB (api/portal-api/web only)
+    compute/          six Container Instances + clamd + a public LB + WAF (api/portal-api/web only)
 ```
 
 ## Known gaps vs. the GCP skeleton, not silently equivalent
@@ -46,8 +46,13 @@ infra/
   hostname-based routing yet).
 - **Redis eviction policy**: GCP's `redis_configs { maxmemory-policy = ... }` has no confirmed OCI
   Cache equivalent in this pass — flagged in the cache module, not silently assumed working.
-- **Retention-rule locking, vault secret creation, LB output attributes**: each flagged inline with
-  `UNVERIFIED` where the exact behavior wasn't confirmed against the registry docs.
+- **`artifacts/*` 7-day lifecycle backstop** (ADR-0006): not ported to the object-storage module —
+  the pipeline's index stage already deletes these directly, so this was always a belt-and-suspenders
+  backstop, not load-bearing, but it's a real, deliberate omission, not an oversight to silently paper
+  over.
+- **Retention-rule locking, vault secret creation, LB/WAF output attributes and the WAF policy's
+  `default_action_name` reference**: each flagged inline with `UNVERIFIED` where the exact behavior
+  wasn't confirmed against the registry docs.
 
 ## Sequencing
 
