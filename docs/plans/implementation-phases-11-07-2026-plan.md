@@ -1,6 +1,6 @@
 # Phased Implementation Plan — Multi-Tenant RAG Knowledge Base
 
-**Date:** 2026-07-11 (updated 2026-08-15) · **Status:** IN PROGRESS — Phase 0 and Phase 1 complete; **Phase 2 is now fully complete** (2.1a–2.7 all DONE, UI + integration test suite landed 2026-08-15 on branch `phase-2-ui-folder-permissions`, not yet merged to `main`); Phase 2A backend complete and merged to `main` (UI screens still open, see Phase 2A.3) — Phase 2A.3 is now the main open UI gap
+**Date:** 2026-07-11 (updated 2026-08-15) · **Status:** IN PROGRESS — Phase 0 and Phase 1 complete; **Phase 2 is now fully complete** (2.1a–2.7 all DONE, UI + integration test suite merged to `main` 2026-08-15); Phase 2A backend complete and merged to `main`, but **its UI (2A.3) is descoped from v1.0 and retargeted to a v1.1 follow-up release** (customer decision, 2026-08-15 — see note under Phase 2A) — v1.0 now ships with calendar/kanban simply left disabled (`featureToggles` never includes `'calendar'`/`'kanban'` for this tenant), which required zero code changes since ADR-0012 already makes the module cleanly opt-in
 **Sources:** ADRs 0001–0009 (all Accepted; 0008 gated), `docs/architecture/system-overview.md`, `docs/architecture/design-review-2026-07-10.md`, `docs/test_plan_v01.md`, `docs/security_audit_plan_v01.md`, `docs/ui/screens_spec_v01.md`, PRD `docs/requirements_v02.md`
 **Prime directive (ADR-0009 + working rule 3):** guards before features — the monorepo, lint rules, backstop plugin, CI gates, and cross-tenant test harness exist **before** the first feature endpoint. Every phase ships its tests inside the phase, not after.
 
@@ -10,11 +10,13 @@
 P0 Foundation ─→ P1 Identity/Tenancy ─→ P2 Folders/Files ─→ P3 Ingestion ─→ P4 Retrieval/Chat ─→ P5 OCR-E/Portal ─→ P6 Hardening/Launch
                       │                                                        ▲
                       └── E1 Hebrew eval corpora (parallel lane) ──────────────┘  (E1 blocks the ADR-0008 gate inside P4)
-                      └── P2A Calendar & Task Management (parallel lane, customer-MVP-driven, generic — no P3/P4 dependency)
+                      └── P2A Calendar & Task Management (parallel lane, generic, backend done — UI retargeted to v1.1, no P3/P4 dependency)
 ADR-0010 (schema migrations): written during P1; must be Accepted before the first production deploy.
 ```
 
-**Added 2026-08-04 (brainstorming session — Kibbutz-governance flavor discussion):** a customer wants calendar + task management as an MVP. That feature is generic (attaches to any `group`, not tenant-vertical-specific) and only depends on P1's tenancy/user/group model, so it's scheduled as a new parallel lane (P2A below) rather than blocking on P3/P4. The governance/committee model that prompted the discussion is **deferred, not phased** — see the note after Phase 6 — because its payoff (chat surfacing binding decisions across levels) hard-depends on P3+P4 existing first, and building it now would be speculative. Both calendar/kanban and governance are separately-priced opt-in modules per tenant (alongside LLM/chat itself), which needs a new module-entitlement ADR extending ADR-0009 before either ships — tracked as P2A.0 below.
+**Added 2026-08-04 (brainstorming session — Kibbutz-governance flavor discussion):** a customer originally wanted calendar + task management as their MVP. That feature is generic (attaches to any `group`, not tenant-vertical-specific) and only depends on P1's tenancy/user/group model, so it was scheduled as a new parallel lane (P2A below) rather than blocking on P3/P4. The governance/committee model that prompted the discussion is **deferred, not phased** — see the note after Phase 6 — because its payoff (chat surfacing binding decisions across levels) hard-depends on P3+P4 existing first, and building it now would be speculative. Both calendar/kanban and governance are separately-priced opt-in modules per tenant (alongside LLM/chat itself), which needed a new module-entitlement ADR extending ADR-0009 before either could ship — built as ADR-0012, tracked as P2A.0 below.
+
+**Updated 2026-08-15:** the customer's requirement changed — calendar/kanban is no longer needed for their v1.0 release, moved to a v1.1 follow-up (see Phase 2A's own note below for the reasoning and what this did/didn't require).
 
 Each phase ends with: unit/integration tests green, the code-quality pipeline (working rule 4: review → simplify → `snyk_code_scan` → final review), and the cross-tenant suite green.
 
@@ -71,22 +73,31 @@ through the API. **Closed 2026-08-13** via `docs/plans/phase-2-folder-group-mana
 
 **Exit criteria:** a user sees exactly their permitted tree; grant changes take effect within the cache-version rules (requires 2.1b + 2.2b); deletion produces a verification record; all P2 tests green.
 
-## Phase 2A — Calendar & Task Management *(parallel lane — customer-MVP-driven, generic, no P3/P4 dependency)*
+## Phase 2A — Calendar & Task Management *(parallel lane, generic, no P3/P4 dependency — UI retargeted to v1.1)*
 
 **Status:** DONE (backend) — implemented via `docs/plans/phase-2a-calendar-kanban-04-08-2026-plan.md`'s
 11-task SDD ledger on branch `phase-2a-calendar-kanban`, merged to `main` 2026-08-12 (`0a3d015..9c278d9`,
-fast-forward, full workspace check 32/32 green post-merge). UI screens themselves are **not** built —
-only the spec addendum (2A.3 below).
+fast-forward, full workspace check 32/32 green post-merge). UI screens themselves are **not** built.
 
-- [DONE] 2A.0 ADRs: `docs/adr/0012-module-entitlement.md` (`tenant.enabledModules`, `@Module(...)` decorator + `ModuleGuard`, parallel to `EditionGuard`) and `docs/adr/0013-email-provider.md` (transactional email provider — pulled P5.4 forward as planned).
+**Descoped from v1.0, retargeted to v1.1 (2026-08-15):** the customer's requirement changed — calendar/kanban
+is no longer needed for their first release. This required **zero code changes**: ADR-0012's module-entitlement
+mechanism (below) already makes calendar/kanban cleanly opt-in per tenant — `tenants.featureToggles` defaults
+to `[]` and every tenant-creation path (`apps/api/src/bootstrap/seed.ts`, `apps/portal-api`'s
+`PlatformTenantsController`) sets it explicitly, `ModuleGuard` 404s any calendar/kanban route when the toggle
+is off, and nothing elsewhere in the codebase has a hard dependency on the `events`/`tasks` collections existing
+(verified directly against the code 2026-08-15, not assumed). So v1.0 ships with the backend present but the
+toggle simply never enabled for this tenant, and 2A.3 (UI) is no longer on the v1.0 critical path — it becomes
+the v1.1 work, alongside enabling the toggle.
+
+- [DONE] 2A.0 ADRs: `docs/adr/0012-module-entitlement.md` (`tenants.featureToggles: string[]`, `@Module(...)` decorator + `ModuleGuard`, parallel to `EditionGuard`) and `docs/adr/0013-email-provider.md` (transactional email provider — pulled P5.4 forward as planned).
 - [DONE] 2A.1 Calendar: `events` collection, `EventsController` (`@Module('calendar')`), per-member invitation email (always-on, not preference-gated). Recurrence/ICS explicitly deferred, not built (design decision 3).
 - [DONE] 2A.2 Kanban: `tasks` collection, `TasksController` (`@Module('kanban')`), fixed 3-column board, assignment. No drag-drop library chosen — no UI code exists yet to need one.
-- [PARTIAL] 2A.3 UI: only `docs/ui/calendar-kanban-notifications-addendum-v01.md` (shaped spec, screens F1–F4) exists. No actual calendar/kanban/notification-preferences screens are built in `apps/web` — this is genuinely the next open item for this lane, not done.
+- [DEFERRED to v1.1] 2A.3 UI: only `docs/ui/calendar-kanban-notifications-addendum-v01.md` (shaped spec, screens F1–F4) exists. No actual calendar/kanban/notification-preferences screens are built in `apps/web` — no longer blocking v1.0, deliberately deferred (see note above), needs its own follow-on plan when v1.1 planning starts.
 - [DONE] 2A.4 Tests: cross-tenant/non-member/module-disabled integration coverage (`apps/api/test/*.integration.spec.ts`, via `mongodb-memory-server` + `ioredis-mock` — no live Mongo/Redis needed); notification triggers unit-tested with a fake provider, no real sends anywhere.
 
-**Built generic, not governance-gated:** calendar/kanban attach to any `group` and ship independent of the committee/document-type model below, so the MVP customer isn't blocked on the Kibbutz-specific work.
+**Built generic, not governance-gated:** calendar/kanban attach to any `group` and ship independent of the committee/document-type model below, so picking this back up for v1.1 isn't blocked on the Kibbutz-specific work either.
 
-**Exit criteria:** a group can schedule an event and its members receive an email invitation; a group's kanban board supports create/assign/move/complete; both pass the cross-tenant suite under the new module-entitlement gate.
+**Exit criteria (backend, already met):** a group can schedule an event and its members receive an email invitation; a group's kanban board supports create/assign/move/complete; both pass the cross-tenant suite under the module-entitlement gate. **v1.1 exit criteria (not yet started):** the UI above exists and the toggle is enabled for the customer's tenant.
 
 ## Phase 3 — Ingestion pipeline
 
