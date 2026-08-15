@@ -51,8 +51,8 @@ Commands: `pnpm install`, `pnpm turbo run build`, `pnpm turbo run lint`, `pnpm t
 
 ## Next steps
 
-1. Phase 2A's UI screens (calendar/kanban board/notification-preferences — spec ready at `docs/ui/calendar-kanban-notifications-addendum-v01.md`) are **v1.1 scope, not v1.0** — descoped from the customer's first release 2026-08-15. Don't schedule this without checking that decision still holds.
-2. The B3–B5 UI slice deliberately deferred out of the Phase 2 UI plan (drag-drop upload, OCR engine choice, quota-gate UX, document version history, processing queue) needs its own follow-on plan whenever picked up — likely the actual next v1.0 UI gap now that calendar is out.
+1. **v1.0 scope is now the file hierarchy alone** (2026-08-15): auth + folders/permissions/groups/upload/download, nothing that needs document processing. Phase 3 (ingestion/OCR) is explicitly deferred — do not start it without being asked. Calendar/kanban UI (Phase 2A.3) is similarly v1.1 scope, not v1.0 — descoped 2026-08-15.
+2. Given (1), the B3–B5 UI slice (drag-drop upload, OCR engine choice, quota-gate UX, document version history, processing queue) is also on hold — most of it assumes Phase 3 exists. Revisit v1.0's remaining UI gaps once this scope is confirmed to still hold.
 3. Provision a real GCP project + billing account so the Terraform skeleton (`infra/`) can actually apply — this also unblocks validating ADR-0010's migration-runner journal/locking behavior against a live Atlas cluster (deferred, see the ADR's Status section)
 4. Eval-corpus lane E1 (Hebrew golden datasets) can start in parallel — it blocks the ADR-0008 gate inside Phase 4
 5. WTP interviews + real Hebrew-document token measurements before finalizing pricing (business lane, unblocked)

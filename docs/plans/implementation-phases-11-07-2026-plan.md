@@ -18,6 +18,8 @@ ADR-0010 (schema migrations): written during P1; must be Accepted before the fir
 
 **Updated 2026-08-15:** the customer's requirement changed — calendar/kanban is no longer needed for their v1.0 release, moved to a v1.1 follow-up (see Phase 2A's own note below for the reasoning and what this did/didn't require).
 
+**Updated 2026-08-15 (later same day):** v1.0 scope narrowed further — Phase 3 (ingestion/OCR) is explicitly deferred, not to be started without being asked. v1.0 is the file hierarchy alone: auth (P1) + folders/permissions/groups/upload/download (P2), nothing that depends on document processing. See Phase 3's own note below.
+
 Each phase ends with: unit/integration tests green, the code-quality pipeline (working rule 4: review → simplify → `snyk_code_scan` → final review), and the cross-tenant suite green.
 
 ---
@@ -100,6 +102,16 @@ the v1.1 work, alongside enabling the toggle.
 **Exit criteria (backend, already met):** a group can schedule an event and its members receive an email invitation; a group's kanban board supports create/assign/move/complete; both pass the cross-tenant suite under the module-entitlement gate. **v1.1 exit criteria (not yet started):** the UI above exists and the toggle is enabled for the customer's tenant.
 
 ## Phase 3 — Ingestion pipeline
+
+**Descoped from v1.0 (2026-08-15):** v1.0 ships as the file hierarchy only — folders, permissions,
+groups, upload/download/recycle-bin (all Phase 2, done) — with no document processing. An uploaded
+file's `status` is set to `'queued'` (`DocumentsController.upload`) and, until this phase is built,
+simply stays there forever: `INGESTION_QUEUE` is bound to `LoggingIngestionQueue`
+(`apps/api/src/documents/documents.providers.ts`), a stub that only logs, not a real BullMQ queue with
+a worker consuming it. This is a deliberate, not accidental, gap — do not start building Phase 3 (OCR
+included) until explicitly asked to resume it. Folder browsing, permissions, and plain file
+upload/download/deletion all work today independent of this phase; only search/chat/OCR-derived text
+extraction depend on it.
 
 - [ ] 3.1 BullMQ topology (ADR-0003): stage queues `scan→parse|ocr-*→chunk→embed→index` on `redis-queue`; `WORKER_POOL` selection with boot-time queue/SA assertion (ADR-0009); job payload scope rehydration into CLS.
 - [ ] 3.2 clamd service + `scan` stage (in-VPC, freshclam-only egress, stale-signature alert); infected ⇒ reject + audit.
