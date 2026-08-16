@@ -1,248 +1,93 @@
-# Container Instances replace Cloud Run (ADR-0014's topology table). Unlike Cloud Run, every
-# container instance needs an explicit subnet placement (no "outside the VCN" default path) and an
-# availability domain — fetched via data source rather than hardcoded, since AD names vary per tenancy.
+# One Always Free Ampere A1 VM running the whole v1.0 stack via docker-compose (ADR-0015).
 #
-# Deliberately matching the GCP skeleton's own incompleteness, not silently different: only
-# WORKER_POOL/REDIS_APP_HOST/REDIS_QUEUE_HOST are wired as env vars here (same as
-# infra-gcp-superseded's cloud-run module) — MONGO_URI, KMS_MASTER_KEY_HEX, PASSWORD_PEPPER, and the
-# storage-provider env vars (OCI_DATA_BUCKET/OCI_NAMESPACE/OCI_REGION) all need real secret-injection
-# wiring that neither skeleton attempts yet. Real work for whoever does the first actual deploy, not
-# assumed done here.
+# Free-tier arithmetic (Oracle's Always Free allowance is expressed in monthly hours, not instance
+# count): 1,500 OCPU-hours and 9,000 GB-hours per month. Running continuously for a 730-hour month:
+#   2 OCPU  x 730 h = 1,460 OCPU-hours  (allowance 1,500)  -> fits, 3% headroom
+#   12 GB   x 730 h = 8,760 GB-hours    (allowance 9,000)  -> fits, 3% headroom
+# The headroom is deliberately thin because this is the entire free allocation. Provisioning a second
+# A1 instance of any size, or bumping either dimension, exceeds it and starts billing. The
+# `lifecycle` block below is a guard against exactly that.
 
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.compartment_id
 }
 
-locals {
-  # First AD is fine for a single-environment, no-HA-yet skeleton (matches this module's overall
-  # scope parity with infra-gcp-superseded's own "module skeleton only" ambition, not a hardened
-  # multi-AD production design).
-  ad = data.oci_identity_availability_domains.ads.availability_domains[0].name
-
-  services = {
-    api          = { subnet = var.app_subnet_id, nsg = var.app_nsg_id, pool = null }
-    portal_api   = { subnet = var.app_subnet_id, nsg = var.app_nsg_id, pool = null }
-    web          = { subnet = var.app_subnet_id, nsg = var.app_nsg_id, pool = null }
-    worker_parse = { subnet = var.subnets.parse, nsg = var.nsgs.parse, pool = "parse" }
-    worker_ai    = { subnet = var.subnets.ai, nsg = var.nsgs.ai, pool = "ai" }
-    worker_index = { subnet = var.subnets.index, nsg = var.nsgs.index, pool = "index" }
-  }
+# Oracle Linux 9, aarch64 — looked up rather than hardcoded, since image OCIDs are region-specific and
+# rotate as Oracle publishes new builds.
+data "oci_core_images" "ol9_arm" {
+  compartment_id           = var.compartment_id
+  operating_system         = "Oracle Linux"
+  operating_system_version = "9"
+  shape                    = "VM.Standard.A1.Flex"
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
 }
 
-resource "oci_container_instances_container_instance" "svc" {
-  for_each             = local.services
-  compartment_id       = var.compartment_id
-  availability_domain  = local.ad
-  display_name         = "kms-${var.env}-${replace(each.key, "_", "-")}"
-  # Flex shape — sized modestly for a not-yet-real-traffic skeleton; revisit once load-tested (P6.3).
-  shape = "CI.Standard.E4.Flex"
+resource "oci_core_instance" "app" {
+  compartment_id      = var.compartment_id
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  display_name        = "kms-${var.env}-app"
+
+  # VM.Standard.A1.Flex is the ONLY shape with a meaningful Always Free allocation. The AMD
+  # alternative (VM.Standard.E2.1.Micro) is 1/8 OCPU + 1 GB — too small to run this stack.
+  shape = "VM.Standard.A1.Flex"
   shape_config {
-    ocpus         = 1
-    memory_in_gbs = 4
+    ocpus         = var.ocpus
+    memory_in_gbs = var.memory_in_gbs
   }
 
-  containers {
-    display_name = replace(each.key, "_", "-")
-    # Bootstrap placeholder — replaced by CI on first real deploy, same convention as the GCP
-    # module's `:bootstrap` image tag.
-    image_url = "${var.region}.ocir.io/${var.ocir_namespace}/kms-${replace(each.key, "_", "-")}:bootstrap"
+  source_details {
+    source_type = "image"
+    source_id   = data.oci_core_images.ol9_arm.images[0].id
+    # 50 GB of the 200 GB Always Free block-storage allowance. The default (46.6 GB) would also work;
+    # 50 is explicit so the free-tier budget is legible rather than implied.
+    boot_volume_size_in_gbs = 50
+  }
 
-    environment_variables = merge(
-      {
-        REDIS_APP_HOST   = var.redis_app_host
-        REDIS_QUEUE_HOST = var.redis_queue_host
-      },
-      each.value.pool == null ? {} : { WORKER_POOL = each.value.pool }
+  create_vnic_details {
+    subnet_id        = var.subnet_id
+    nsg_ids          = [var.nsg_id]
+    assign_public_ip = true
+    display_name     = "kms-${var.env}-app-vnic"
+    hostname_label   = "app"
+  }
+
+  metadata = {
+    ssh_authorized_keys = var.ssh_public_key
+    # cloud-init installs the container runtime only. It deliberately does NOT pull or start the
+    # application: images don't exist in OCIR yet, and baking a deploy into instance creation would
+    # make every `terraform apply` a deploy. Deployment is a separate step (deploy/README.md).
+    user_data = base64encode(<<-EOF
+      #cloud-config
+      package_update: true
+      packages:
+        - docker
+        - docker-compose-plugin
+      runcmd:
+        - systemctl enable --now docker
+        - usermod -aG docker opc
+        # Oracle Linux ships a default-DENY iptables INPUT chain that silently blocks 80/443 even
+        # when the OCI NSG allows them. This is the single most common "the NSG is right but nothing
+        # answers" failure on OCI — opening it here rather than leaving it to be rediscovered.
+        - firewall-cmd --permanent --add-service=http
+        - firewall-cmd --permanent --add-service=https
+        - firewall-cmd --reload
+    EOF
     )
   }
 
-  vnics {
-    subnet_id              = each.value.subnet
-    nsg_ids                = [each.value.nsg]
-    is_public_ip_assigned  = false
-    display_name           = "${replace(each.key, "_", "-")}-vnic"
-  }
-}
-
-# clamd — internal only, in subnet-parse, no egress except the freshclam signature mirror
-# (ADR-0003/ADR-0014). Its own NSG (not the shared parse NSG) so its one necessary egress exception
-# doesn't loosen the worker-parse pool's own no-internet posture.
-resource "oci_core_network_security_group" "clamd" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  display_name   = "kms-${var.env}-nsg-clamd"
-}
-
-resource "oci_core_network_security_group_security_rule" "clamd_egress_freshclam" {
-  network_security_group_id = oci_core_network_security_group.clamd.id
-  direction                 = "EGRESS"
-  protocol                  = "6" # TCP
-  destination                = "0.0.0.0/0"
-  destination_type           = "CIDR_BLOCK"
-  description                = "freshclam signature mirror only — clamd has no other egress (ADR-0003)"
-  tcp_options {
-    destination_port_range {
-      min = 443
-      max = 443
+  lifecycle {
+    precondition {
+      condition     = var.ocpus <= 2 && var.memory_in_gbs <= 12
+      error_message = "Exceeds the OCI Always Free Ampere A1 allocation (2 OCPU / 12 GB). Raising this starts real billing — change it deliberately, not by accident."
     }
   }
 }
 
-resource "oci_container_instances_container_instance" "clamd" {
-  compartment_id      = var.compartment_id
-  availability_domain = local.ad
-  display_name        = "kms-${var.env}-clamd"
-  shape                = "CI.Standard.E4.Flex"
-  shape_config {
-    ocpus         = 1
-    memory_in_gbs = 2
-  }
-
-  containers {
-    display_name = "clamd"
-    image_url     = "${var.region}.ocir.io/${var.ocir_namespace}/kms-clamd:bootstrap"
-  }
-
-  vnics {
-    subnet_id              = var.subnets.parse
-    nsg_ids                = [oci_core_network_security_group.clamd.id]
-    is_public_ip_assigned  = false
-    display_name           = "clamd-vnic"
-  }
+output "public_ip" {
+  value = oci_core_instance.app.public_ip
 }
 
-# Public LB — a genuine functional gap Cloud Run didn't have: Cloud Run services get a public
-# `*.run.app` URL automatically, so the GCP module's skeleton never needed an LB resource at all
-# (its own README says you can skip the LB module entirely for a PoC). Container Instances have no
-# such default; without this, api/portal-api/web (VNICs deliberately with no public IP) would be
-# completely unreachable. Simplified relative to ADR-0007/0014's actual same-domain hostname-routing
-# design (api.<domain> / admin.<domain> / app.<domain>) — that needs OCI LB Routing Policies
-# (host-header based rules), not yet implemented here; this uses one listener port per service
-# instead, a real but interim gap, not silently equivalent to the target design.
-
-# UNVERIFIED, flag for Task 8: the LB's public-IP output attribute name (used below in
-# `service_urls`/`lb_public_ip`) was not independently confirmed against the registry docs in this
-# pass — likely `ip_address_details[0].ip_address` based on general provider convention, but check
-# `terraform plan`'s attribute list against a real LB before trusting these two outputs.
-resource "oci_load_balancer_load_balancer" "public" {
-  compartment_id = var.compartment_id
-  display_name   = "kms-${var.env}-lb"
-  shape          = "flexible"
-  subnet_ids     = [var.public_subnet_id]
-  is_private     = false
-  shape_details {
-    minimum_bandwidth_in_mbps = 10
-    maximum_bandwidth_in_mbps = 100
-  }
-}
-
-resource "oci_load_balancer_backend_set" "svc" {
-  for_each         = { api = 3000, portal_api = 3100, web = 3000 }
-  load_balancer_id = oci_load_balancer_load_balancer.public.id
-  name             = replace(each.key, "_", "-")
-  policy           = "ROUND_ROBIN"
-  health_checker {
-    protocol = "TCP"
-    port     = each.value
-  }
-}
-
-resource "oci_load_balancer_backend" "svc" {
-  for_each         = oci_load_balancer_backend_set.svc
-  load_balancer_id = oci_load_balancer_load_balancer.public.id
-  backendset_name  = each.value.name
-  ip_address       = oci_container_instances_container_instance.svc[each.key].vnics[0].private_ip
-  port             = each.key == "portal_api" ? 3100 : 3000
-}
-
-resource "oci_load_balancer_listener" "svc" {
-  for_each                 = { api = 8080, portal_api = 8081, web = 8090 }
-  load_balancer_id         = oci_load_balancer_load_balancer.public.id
-  name                     = "${replace(each.key, "_", "-")}-listener"
-  default_backend_set_name = oci_load_balancer_backend_set.svc[each.key].name
-  port                     = each.value
-  protocol                 = "HTTP"
-}
-
-# WAF (sec §6 — Task 6 originally called for this alongside the LB).
-#
-# CORRECTION (security review caught this, 2026-08-15): the first version of this resource declared
-# only `request_access_control { default_action_name = "allow_action" }` with no `actions` block
-# defining what "allow_action" even was, and — critically — no `request_protection` block at all.
-# That's not a WAF, it's a resource that satisfies "a WAF exists" on paper while blocking nothing:
-# default-allow with zero inspection rules is an ineffective control, arguably worse than having none
-# (false confidence). Fixed below by defining real named actions and wiring a `request_protection`
-# block that actually references OCI's managed protection capabilities (the OWASP-CRS-style rule
-# groups — SQLi/XSS/RCE detection).
-#
-# UNVERIFIED, flag for Task 8: the exact `protection_capabilities` `key` values below (920130/941110/
-# 930100) are cited from Oracle's own documented example set for SQLi/XSS/RCE detection, but this
-# repo has no way to independently confirm they're the current, correct capability ids for this OCI
-# tenancy's WAF catalog without a live `oci waf protection-capability list` call. Confirm and adjust
-# at Task 8's first `terraform validate` — don't assume these three ids are complete or current
-# coverage; they're a starting point; a real production tuning pass belongs in the P6.2 audit gate.
-resource "oci_waf_web_app_firewall_policy" "public" {
-  compartment_id = var.compartment_id
-  display_name   = "kms-${var.env}-waf-policy"
-
-  actions {
-    name = "allow_action"
-    type = "ALLOW"
-  }
-
-  actions {
-    name = "block_action"
-    type = "RETURN_HTTP_RESPONSE"
-    code = "403"
-    body {
-      type = "STATIC_TEXT"
-      text = "Request blocked by WAF"
-    }
-  }
-
-  request_protection {
-    rules {
-      name                       = "core-protection"
-      type                       = "PROTECTION_RULE"
-      action_name                = "block_action"
-      is_body_inspection_enabled = true
-
-      protection_capabilities {
-        key     = "920130" # SQL injection detection (OCI managed capability)
-        version = "1"
-      }
-      protection_capabilities {
-        key     = "941110" # XSS detection (OCI managed capability)
-        version = "1"
-      }
-      protection_capabilities {
-        key     = "930100" # Remote code execution / path traversal (OCI managed capability)
-        version = "1"
-      }
-    }
-  }
-
-  request_access_control {
-    default_action_name = "allow_action"
-  }
-}
-
-resource "oci_waf_web_app_firewall" "public" {
-  compartment_id             = var.compartment_id
-  display_name               = "kms-${var.env}-waf"
-  backend_type                = "LOAD_BALANCER"
-  load_balancer_id            = oci_load_balancer_load_balancer.public.id
-  web_app_firewall_policy_id  = oci_waf_web_app_firewall_policy.public.id
-}
-
-output "lb_public_ip" {
-  value = oci_load_balancer_load_balancer.public.ip_address_details[0].ip_address
-}
-
-output "service_urls" {
-  value = {
-    api        = "http://${oci_load_balancer_load_balancer.public.ip_address_details[0].ip_address}:8080"
-    portal_api = "http://${oci_load_balancer_load_balancer.public.ip_address_details[0].ip_address}:8081"
-    web        = "http://${oci_load_balancer_load_balancer.public.ip_address_details[0].ip_address}:8090"
-  }
+output "ssh_command" {
+  value = "ssh opc@${oci_core_instance.app.public_ip}"
 }

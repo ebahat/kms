@@ -18,6 +18,12 @@ infra-gcp-superseded/**/.terraform/
 infra-gcp-superseded/**/*.tfstate
 infra-gcp-superseded/**/*.tfstate.backup
 infra-gcp-superseded/**/.terraform.lock.hcl
+infra-oci-managed/**/.terraform/
+infra-oci-managed/**/*.tfstate
+infra-oci-managed/**/*.tfstate.backup
+infra-oci-managed/**/.terraform.lock.hcl
+infra-oci-managed/**/*.tfvars
+!infra-oci-managed/**/*.tfvars.example
 .playwright-mcp/
 test-results/
 playwright-report/

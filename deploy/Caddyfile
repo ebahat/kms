@@ -1,0 +1,49 @@
+# Caddy — TLS termination, hostname routing, security headers (ADR-0015).
+#
+# This restores ADR-0004's admin-realm hostname separation, which ADR-0014's load balancer could NOT
+# deliver: that design fell back to per-port listeners (:8080/:8081/:8090) because host-header routing
+# needs OCI LB Routing Policies that were never implemented. Here it's three site blocks.
+#
+# TLS certificates are obtained automatically from Let's Encrypt on first request per hostname. DNS
+# for all three names must already resolve to the VM's public IP, or issuance fails.
+
+{
+	# Fail loudly at startup rather than silently serving without TLS.
+	email admin@{$DOMAIN}
+}
+
+(security_headers) {
+	header {
+		# sec §4.4 — the app must never be framed, and content-type must never be sniffed.
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}
+
+# Tenant API
+api.{$DOMAIN} {
+	import security_headers
+	reverse_proxy api:3000
+}
+
+# Platform-admin realm — separate hostname is a real security boundary (ADR-0004), not cosmetic.
+# The admin UI is served by `web` on this hostname (via apps/web's middleware.ts hostname rewrite),
+# while admin *data* comes from portal-api. Matches ADR-0007's original two-hostname design.
+admin.{$DOMAIN} {
+	import security_headers
+
+	# Admin API calls go to portal-api; everything else is the Next.js admin UI.
+	@api path /auth/* /platform-admin/* /health
+	reverse_proxy @api portal-api:3100
+
+	reverse_proxy web:3010
+}
+
+# Tenant-facing UI
+app.{$DOMAIN} {
+	import security_headers
+	reverse_proxy web:3010
+}

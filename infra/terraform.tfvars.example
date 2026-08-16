@@ -1,8 +1,13 @@
-# Copy to terraform.tfvars (gitignored) and fill in real values before the first `terraform plan`.
-# See infra/README.md and docs/deployment/gcp-aws-deployment-guide-11-08-2026.md's OCI section.
+# Copy to terraform.tfvars (gitignored) and fill in. See README.md.
 
 compartment_id           = "ocid1.compartment.oc1..xxxxxxxx"
-region                   = "eu-frankfurt-1"
+region                   = "eu-frankfurt-1" # must be the tenancy's HOME region
 env                      = "kms"
 domain                   = "example.com"
 object_storage_namespace = "yournamespace" # `oci os ns get`
+
+# Contents of your public key file, e.g. ~/.ssh/id_ed25519.pub
+ssh_public_key = "ssh-ed25519 AAAA... you@host"
+
+# Your own address only. Never 0.0.0.0/0 — this is a public IP on the open internet.
+ssh_ingress_cidr = "203.0.113.4/32"

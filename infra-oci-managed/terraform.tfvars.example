@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values before the first `terraform plan`.
+# See infra/README.md and docs/deployment/gcp-aws-deployment-guide-11-08-2026.md's OCI section.
+
+compartment_id           = "ocid1.compartment.oc1..xxxxxxxx"
+region                   = "eu-frankfurt-1"
+env                      = "kms"
+domain                   = "example.com"
+object_storage_namespace = "yournamespace" # `oci os ns get`

@@ -9,6 +9,22 @@
 
 ## Status
 
+**Retargeted 2026-08-16 by [ADR-0015](0015-pre-revenue-single-vm-topology.md) — this is now the
+*scale-up* topology, not the starting one.** Its cloud choice (OCI over GCP) stands and is not
+reopened; what changed is *when* its managed-services topology gets applied: at revenue/real data
+volume, not at zero users. ADR-0015 is the pre-revenue starting topology. This ADR's Terraform was
+`plan`-verified against a real tenancy (52 resources, 0 errors) but **never applied**.
+
+**Correction (2026-08-16): this ADR's free-tier claim was wrong.** Under "Consequences → Positive" it
+stated "OCI's Always Free tier absorbs early-stage compute/storage cost entirely." Checked against
+Oracle's authoritative Always Free list, three of this ADR's core building blocks are **not Always
+Free at any size**: Container Instances (~$156/mo for the 7 declared here), OCI Cache with Redis
+(~$85/mo for the 2 declared), and WAF. The Flexible Load Balancer is Always Free only at 10 Mbps min
+*and* max, while this ADR's compute module sets max=100. Real cost of applying this ADR as written:
+**~$240/month at zero users**. The *comparative* case against GCP is unaffected and still holds
+(Redis and egress genuinely are cheaper on OCI at real volume) — the free-tier sentence specifically
+was false, and the error was mine, not a change in Oracle's terms.
+
 Accepted. Supersedes ADR-0007 in full — GCP is no longer the production hosting target. Rebinds
 ADR-0006's cloud-specific primitives (GCS, Cloud KMS, Secret Manager) to OCI equivalents; ADR-0006's
 logical decisions (bucket-per-env + tenant-prefix layout, WORM audit bucket, signed-URL semantics,
@@ -155,9 +171,12 @@ already exist and are already the production seam — this is additive, not a re
 
 - **Positive:** Redis and egress — this app's two heaviest real cost centers given its actual shape
   (two Redis instances, signed-URL-heavy file serving) — get meaningfully cheaper at production volume,
-  not just during a free-tier MVP window; OCI's Always Free tier absorbs early-stage compute/storage
-  cost entirely; made before any real deploy exists, so there is zero migration cost, only a decision
-  cost.
+  not just during a free-tier MVP window; made before any real deploy exists, so there is zero
+  migration cost, only a decision cost.
+  ~~OCI's Always Free tier absorbs early-stage compute/storage cost entirely~~ — **struck 2026-08-16,
+  this was false**: Container Instances, OCI Cache, and WAF are not Always Free at any size, making
+  this topology ~$240/month at zero users. See the correction in Status, and ADR-0015 for the
+  pre-revenue topology that actually does cost $0.
 - **Negative / accepted risks:** Less mature IaC ecosystem and zero prior team operational experience
   with OCI, accepted as a one-time learning cost against a recurring savings; Oracle's Always Free
   allocation has already been cut once (Ampere halved June 2026) — anything long-term-load-bearing

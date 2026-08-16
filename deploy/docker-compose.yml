@@ -1,0 +1,112 @@
+# v1.0 stack for the single-VM pre-revenue topology (ADR-0015).
+#
+# Runs on the OCI Always Free Ampere A1 VM (2 OCPU / 12 GB, arm64) — and unchanged on Hetzner or any
+# other VPS, which is the point: the free tier is not load-bearing for the architecture.
+#
+# NOT here, deliberately: worker-parse, worker-ai, worker-index, clamd. All Phase 3 (ingestion/OCR),
+# descoped from v1.0 on 2026-08-15. Their absence is the design, not an omission.
+#
+# Memory limits are set on every service so a leak in one cannot take down the whole VM — with 12 GB
+# total and ~3.7 GB committed here, the reservations are conservative on purpose.
+
+name: kms
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # Let's Encrypt certs+keys — MUST persist, or every restart re-issues
+      - caddy_config:/config  # and risks hitting Let's Encrypt rate limits (5 failures/hour/domain)
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required (e.g. bahat.co.il)}
+    depends_on: [api, portal-api, web]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  api:
+    image: ${REGISTRY}/kms-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_APP_HOST: redis-app
+      REDIS_QUEUE_HOST: redis-queue
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER is required}
+      KMS_MASTER_KEY_HEX: ${KMS_MASTER_KEY_HEX:?KMS_MASTER_KEY_HEX is required}
+      OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
+      OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
+      OCI_REGION: ${OCI_REGION:-eu-frankfurt-1}
+    depends_on: [redis-app, redis-queue]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  portal-api:
+    image: ${REGISTRY}/kms-portal-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3100
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_APP_HOST: redis-app
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER is required}
+      KMS_MASTER_KEY_HEX: ${KMS_MASTER_KEY_HEX:?KMS_MASTER_KEY_HEX is required}
+    depends_on: [redis-app]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  web:
+    image: ${REGISTRY}/kms-web:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3010
+      NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
+      NEXT_PUBLIC_PORTAL_API_URL: https://admin.${DOMAIN}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Two Redis instances with OPPOSITE eviction policies — ADR-0007's design review, finding 1.
+  # ADR-0014's managed OCI Cache could NOT express this (flagged UNVERIFIED, both clusters left on
+  # defaults). Here it is simply a flag, so the requirement is actually met for the first time.
+  redis-app:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Sessions, login-lockout counters, permission cache — all re-derivable or re-login-able, so
+    # eviction under pressure is tolerable (ADR-0004/0005).
+    command: redis-server --maxmemory 384mb --maxmemory-policy volatile-lru --save ""
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis-queue:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # BullMQ corrupts or loses jobs under ANY eviction policy (ADR-0003) — noeviction is mandatory,
+    # not a tuning preference. AOF on: queued jobs should survive a container restart.
+    command: redis-server --maxmemory 384mb --maxmemory-policy noeviction --appendonly yes
+    volumes:
+      - redis_queue_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis_queue_data:

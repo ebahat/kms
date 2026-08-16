@@ -1,66 +1,76 @@
-# Infra (Terraform) — ADR-0014 topology (OCI)
+# Infra (Terraform) — ADR-0015 topology (OCI Always Free, single VM)
 
-**Status:** module skeleton only, ported from `infra-gcp-superseded/` (kept for historical reference,
-not deleted — see [ADR-0014](../docs/adr/0014-hosting-topology-oci.md)). `terraform apply` is not
-runnable yet — it needs real values this repo cannot supply, and this HCL has not been run through
-`terraform validate`/`plan` at all (no `terraform` CLI or OCI credentials exist in this environment —
-same caveat the GCP skeleton carried). Several resource arguments are flagged inline as unverified;
-search this directory for `UNVERIFIED` before the first real `terraform validate`.
+**This is the active topology.** The managed-services topology (Container Instances, OCI Cache,
+LB+WAF) lives in `infra-oci-managed/` — it is **not superseded**, it is the documented *scale-up*
+target for when there is revenue and real data volume. See
+[ADR-0015](../docs/adr/0015-pre-revenue-single-vm-topology.md) for why the starting topology is
+different from the growth one.
 
-Prerequisites (see `docs/deployment/gcp-aws-deployment-guide-11-08-2026.md`'s OCI section for the full
-account-setup runbook):
+**Everything here is Always Free.** Expected cost: **$0/month**, provided the ceilings below hold.
 
-- An OCI tenancy with a budget alert set (Oracle's Always Free tier has already been cut once — don't
-  assume it's permanent for anything long-term-load-bearing)
-- A compartment created for this project (`compartment_id`)
-- The tenancy's Object Storage namespace (`oci os ns get`) — reused for both the data/audit buckets
-  and OCIR (they share a namespace)
-- A domain for the LB (`api.<domain>`, `admin.<domain>`, `app.<domain>` — see the compute module's own
-  note on why hostname-based routing isn't actually wired yet, only per-port listeners)
-- An Atlas project/org id + API keys (Atlas itself is managed outside this Terraform, same as the GCP
-  skeleton — no OCI PrivateLink equivalent is used at this scale, ADR-0014)
+## Resources created (20 total — confirmed by a real `terraform plan`)
 
-Fill these into `terraform.tfvars` (gitignored, see `terraform.tfvars.example`) before the first
-`terraform plan`.
+| Module | Resources | Always Free? |
+|---|---|---|
+| `network` | VCN, internet gateway, route table, public subnet, NSG + 4 rules | ✅ |
+| `compute` | 1 × `VM.Standard.A1.Flex` (2 OCPU / 12 GB, 50 GB boot), public IP | ✅ |
+| `object-storage` | `kms-{env}-data`, `kms-{env}-audit` buckets | ✅ |
+| `vault` | 1 Vault, 2 AES keys, 5 secrets | ✅ |
+
+**Not created** (all billable, all in `infra-oci-managed/`): Container Instances, OCI Cache with
+Redis, WAF, Load Balancer.
+
+## Free-tier ceilings — exceeding any of these starts real billing
+
+| Resource | Allowance | This config uses |
+|---|---|---|
+| Ampere A1 compute | 1,500 OCPU-hrs + 9,000 GB-hrs per month | 1,460 + 8,760 (~3% headroom) |
+| Block storage | 200 GB | 50 GB |
+| Object Storage | 20 GB + **50,000 API requests/month** | grows with usage |
+| Egress | 10 TB/month | grows with usage |
+| Secrets | 150 | 5 |
+
+The compute headroom is thin *by design* — 2 OCPU / 12 GB is the entire free allocation, so a second
+instance of any size exceeds it. `modules/compute/main.tf` has a `precondition` that fails the plan
+if `ocpus`/`memory_in_gbs` are raised above the free ceiling, so it can't happen by accident.
+
+Object Storage API requests are the ceiling most likely to bite first (every upload, signed-URL
+issuance, and deletion-verification check counts). **Set a budget alert** — Always Free bills the
+overage rather than hard-stopping.
+
+## Prerequisites
+
+- OCI tenancy + compartment; `oci setup config` done (`~/.oci/config`)
+- **`region` must be the tenancy's HOME region** — Always Free resources are only free there
+- Object Storage namespace (`oci os ns get`)
+- An SSH keypair (`ssh-keygen -t ed25519`) — the public key goes in `terraform.tfvars`
+- Your own IP/CIDR for `ssh_ingress_cidr` (do not use `0.0.0.0/0`)
+- A domain whose DNS you control
+
+Copy `terraform.tfvars.example` → `terraform.tfvars` (gitignored) and fill it in.
+
+## Apply
+
+```bash
+terraform init
+terraform plan     # expect 20 to add, 0 to change, 0 to destroy
+terraform apply
+terraform output public_ip   # point DNS here, then see ../deploy/README.md
+```
 
 ## Layout
 
 ```
 infra/
-  versions.tf       provider requirements (oracle/oci)
-  variables.tf       compartment/region/env/domain/namespace inputs
-  main.tf            root module wiring the pieces below
+  versions.tf        provider requirements (oracle/oci ~> 7.0)
+  variables.tf        compartment/region/env/domain/namespace/ssh inputs
+  main.tf             root module
   modules/
-    network/         VCN + subnet-parse/ai/index/app/public, NSGs, NAT+service gateway
-    cache/            OCI Cache with Redis x2: redis-app + redis-queue
-    object-storage/   kms-{env}-data + kms-{env}-audit buckets, KMS-encrypted
-    vault/            OCI Vault: KMS keys (TOTP envelope, storage encryption) + secrets
-    compute/          six Container Instances + clamd + a public LB + WAF (api/portal-api/web only)
+    network/          VCN + public subnet + NSG (80/443 open, 22 restricted)
+    compute/          the Always Free A1 VM, cloud-init installs Docker only
+    object-storage/   data + audit buckets (unchanged from the managed topology)
+    vault/            KMS keys + secrets (unchanged from the managed topology)
 ```
 
-## Known gaps vs. the GCP skeleton, not silently equivalent
-
-- **Reachability**: Cloud Run services get a public URL automatically; Container Instances don't —
-  this port includes an actual LB (the GCP skeleton didn't have one at all, deferred entirely). See
-  the compute module's own comment for what's simplified about it (per-port listeners, not real
-  hostname-based routing yet).
-- **Redis eviction policy**: GCP's `redis_configs { maxmemory-policy = ... }` has no confirmed OCI
-  Cache equivalent in this pass — flagged in the cache module, not silently assumed working.
-- **`artifacts/*` 7-day lifecycle backstop** (ADR-0006): not ported to the object-storage module —
-  the pipeline's index stage already deletes these directly, so this was always a belt-and-suspenders
-  backstop, not load-bearing, but it's a real, deliberate omission, not an oversight to silently paper
-  over.
-- **Retention-rule locking, vault secret creation, LB output attributes**: each flagged inline with
-  `UNVERIFIED` where the exact behavior wasn't confirmed against the registry docs.
-- **WAF protection-capability ids** (`920130`/`941110`/`930100` in the compute module — SQLi/XSS/RCE
-  detection): a security review of an earlier commit caught that the first version of this resource
-  was default-allow with zero inspection rules — fixed to actually wire OCI's managed protection
-  capabilities, but the exact capability ids are cited from Oracle's documented examples, not
-  independently confirmed against this tenancy's live catalog. Confirm at Task 8; treat as a starting
-  point, not complete production coverage.
-
-## Sequencing
-
-Same as before: apply against the single environment first (no staging/prod split yet — ADR-0014
-scoping decision), confirm hello-world container instances + the LB respond, then revisit whether a
-staging split is worth adding before a real production cutover.
+`object-storage` and `vault` are reused as-is from the managed topology — both were already entirely
+Always Free, so there was nothing to change.

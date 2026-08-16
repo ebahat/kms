@@ -1,28 +1,21 @@
 variable "compartment_id" { type = string }
-variable "region" { type = string }
 variable "env" { type = string }
-variable "vcn_id" { type = string }
-variable "public_subnet_id" { type = string }
-variable "app_subnet_id" { type = string }
-variable "app_nsg_id" { type = string }
-variable "subnets" {
-  type = object({
-    parse = string
-    ai    = string
-    index = string
-  })
-}
-variable "nsgs" {
-  type = object({
-    parse = string
-    ai    = string
-    index = string
-  })
-}
-variable "redis_app_host" { type = string }
-variable "redis_queue_host" { type = string }
+variable "subnet_id" { type = string }
+variable "nsg_id" { type = string }
 
-variable "ocir_namespace" {
-  description = "Object Storage namespace, reused as the OCIR registry namespace (OCIR shares the tenancy's Object Storage namespace) — find it with `oci os ns get`"
+variable "ssh_public_key" {
+  description = "Public key for the `opc` user. Generate with `ssh-keygen -t ed25519`; paste the .pub contents."
   type        = string
+}
+
+variable "ocpus" {
+  description = "OCPUs. 2 is the Always Free ceiling — above it, billing starts (guarded by a precondition in main.tf)."
+  type        = number
+  default     = 2
+}
+
+variable "memory_in_gbs" {
+  description = "Memory in GB. 12 is the Always Free ceiling — above it, billing starts (guarded by a precondition in main.tf)."
+  type        = number
+  default     = 12
 }

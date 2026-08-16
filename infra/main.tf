@@ -1,23 +1,13 @@
 provider "oci" {
   region = var.region
-  # Auth: defaults to the OCI config-file provider (`~/.oci/config`, set up via `oci setup config` —
-  # see docs/deployment/gcp-aws-deployment-guide-11-08-2026.md's OCI section). CI should use a
-  # different auth method (e.g. an OCI Resource Principal or a scoped API key stored as a secret) —
-  # not decided yet, tracked as a Task 7 follow-up alongside the rest of the CI wiring.
+  # Auth: OCI config-file provider (`~/.oci/config`, via `oci setup config`).
 }
 
 module "network" {
-  source         = "./modules/network"
-  compartment_id = var.compartment_id
-  env            = var.env
-}
-
-module "cache" {
-  source         = "./modules/cache"
-  compartment_id = var.compartment_id
-  env            = var.env
-  app_subnet_id  = module.network.subnets.app
-  app_nsg_id     = module.network.nsgs.app
+  source           = "./modules/network"
+  compartment_id   = var.compartment_id
+  env              = var.env
+  ssh_ingress_cidr = var.ssh_ingress_cidr
 }
 
 module "vault" {
@@ -35,17 +25,27 @@ module "object_storage" {
 }
 
 module "compute" {
-  source            = "./modules/compute"
-  compartment_id    = var.compartment_id
-  region            = var.region
-  env               = var.env
-  vcn_id            = module.network.vcn_id
-  public_subnet_id  = module.network.subnets.public
-  app_subnet_id     = module.network.subnets.app
-  app_nsg_id        = module.network.nsgs.app
-  subnets           = { parse = module.network.subnets.parse, ai = module.network.subnets.ai, index = module.network.subnets.index }
-  nsgs              = { parse = module.network.nsgs.parse, ai = module.network.nsgs.ai, index = module.network.nsgs.index }
-  redis_app_host    = module.cache.app_host
-  redis_queue_host  = module.cache.queue_host
-  ocir_namespace    = var.object_storage_namespace
+  source         = "./modules/compute"
+  compartment_id = var.compartment_id
+  env            = var.env
+  subnet_id      = module.network.subnet_id
+  nsg_id         = module.network.nsg_id
+  ssh_public_key = var.ssh_public_key
+}
+
+output "public_ip" {
+  description = "Point api.<domain>, admin.<domain>, and app.<domain> A-records at this before deploying — Caddy needs resolvable DNS to obtain Let's Encrypt certificates."
+  value       = module.compute.public_ip
+}
+
+output "ssh_command" {
+  value = module.compute.ssh_command
+}
+
+output "data_bucket" {
+  value = module.object_storage.data_bucket
+}
+
+output "audit_bucket" {
+  value = module.object_storage.audit_bucket
 }
