@@ -1,25 +1,46 @@
 import { Provider } from '@nestjs/common';
-import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, StorageProvider } from './storage/storage-provider';
+import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from './storage/storage-provider';
 import { IngestionQueue, LoggingIngestionQueue } from './ingestion-queue';
 
 export const STORAGE_PROVIDER = 'STORAGE_PROVIDER' as const;
 export const INGESTION_QUEUE = 'INGESTION_QUEUE' as const;
 
 /**
- * Both GcsStorageProvider and OciStorageProvider need live cloud credentials
- * and a real bucket (ADR-0006/ADR-0014) — as of this writing neither exists
- * in this environment (infra/ not yet applied — root CLAUDE.md). Falls back
- * to the in-memory FakeStorageProvider when neither *_DATA_BUCKET env var is
- * set, so local dev and tests keep working. GCS takes precedence if both
- * happen to be set (preserves prior behavior unchanged; not expected in
- * practice — a deployment targets one cloud). OCI's binding is async
- * (instance-principal identity resolution — see OciStorageProvider's doc
- * comment), which is why this factory itself is async; NestJS supports that
- * natively for useFactory.
+ * Selects a storage binding from the environment. Every production binding
+ * needs live cloud credentials and a real bucket (ADR-0006/ADR-0014/ADR-0015);
+ * none exists in this environment yet (nothing applied — root CLAUDE.md), so
+ * the fallback is the in-memory FakeStorageProvider and local dev/tests keep
+ * working untouched.
+ *
+ * Precedence is explicit rather than incidental: S3 first, because
+ * S3StorageProvider is the *portable* one (ADR-0015 — it also drives Hetzner,
+ * OCI-compat, R2, B2 and MinIO), so a deployment that sets S3_DATA_BUCKET
+ * means it. GCS and OCI keep their prior relative order so existing behavior
+ * is unchanged. A deployment targets exactly one cloud in practice; multiple
+ * vars set at once is a misconfiguration, and first-match-wins keeps it
+ * predictable instead of merging.
+ *
+ * The factory is async because OciStorageProvider resolves an instance-
+ * principal identity before it can be constructed (see its doc comment);
+ * NestJS supports async useFactory natively.
  */
 export const storageProviderProvider: Provider = {
   provide: STORAGE_PROVIDER,
   useFactory: async (): Promise<StorageProvider> => {
+    const s3Bucket = process.env.S3_DATA_BUCKET;
+    if (s3Bucket) {
+      const region = process.env.S3_REGION;
+      if (!region) throw new Error('S3_DATA_BUCKET is set but S3_REGION is missing');
+      return new S3StorageProvider(s3Bucket, {
+        region,
+        // Unset for real AWS; set for Hetzner / OCI-compat / R2 / MinIO.
+        endpoint: process.env.S3_ENDPOINT,
+        // Most non-AWS S3 implementations need path-style addressing. Defaults to the SDK's own
+        // behavior (virtual-hosted) unless explicitly opted in.
+        forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true' ? true : undefined,
+      });
+    }
+
     const gcsBucket = process.env.GCS_DATA_BUCKET;
     if (gcsBucket) return new GcsStorageProvider(gcsBucket);
 

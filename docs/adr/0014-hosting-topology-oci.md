@@ -177,6 +177,21 @@ already exist and are already the production seam — this is additive, not a re
   this was false**: Container Instances, OCI Cache, and WAF are not Always Free at any size, making
   this topology ~$240/month at zero users. See the correction in Status, and ADR-0015 for the
   pre-revenue topology that actually does cost $0.
+- **Negative — a capability silently lost in the port from ADR-0007, found 2026-08-16, not at
+  authoring time:** **Container Instances have no native autoscaling.** ADR-0007's Cloud Run design
+  had it explicitly ("per-service autoscaling absorbs 10× (PRD §13) without topology change"); this
+  ADR's topology table maps Cloud Run → Container Instances one-for-one and never mentions that this
+  property does not carry over. So this topology is **fixed capacity** (7 OCPU / 26 GB as declared).
+  Growing past it requires one of: larger instances (more cost), a custom scaling loop (OCI Functions
+  + Alarms + Resource Manager, which is a real build), or moving to OKE/Kubernetes. Decide which
+  before this topology is applied for a workload that needs headroom — PRD §13's "10× without
+  redesign" claim does **not** hold as written here.
+- **Negative — the ~$240/mo figure is compute-only.** Real all-in production cost also needs Atlas
+  M10+ (~$60/mo, required by ADR-0002 for Vector + Atlas Search), plus storage/egress above the free
+  allowances — realistically ~$300–350/mo at PRD §13's MVP scale (20 tenants / 8,000 users). Atlas was
+  excluded from this ADR's comparison because it is identical on either cloud, which is valid for a
+  GCP-vs-OCI decision but misleading if read as a total-cost-of-ownership number. Capacity adequacy at
+  that scale is an estimate; nothing has been load-tested (P6.3).
 - **Negative / accepted risks:** Less mature IaC ecosystem and zero prior team operational experience
   with OCI, accepted as a one-time learning cost against a recurring savings; Oracle's Always Free
   allocation has already been cut once (Ampere halved June 2026) — anything long-term-load-bearing

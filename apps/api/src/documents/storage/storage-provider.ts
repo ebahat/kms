@@ -1,6 +1,8 @@
 import { Storage, Bucket } from '@google-cloud/storage';
 import * as objectstorage from 'oci-objectstorage';
 import * as common from 'oci-common';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export const SIGNED_URL_TTL_MS = 5 * 60_000; // ADR-0006: 5 minutes, issued per click, never stored
 
@@ -219,5 +221,82 @@ export class OciStorageProvider implements StorageProvider {
       if (err instanceof common.OciError && err.statusCode === 404) return;
       throw err;
     }
+  }
+}
+
+/**
+ * S3-compatible binding — the portable one (ADR-0015 follow-up). Works against AWS S3, Hetzner
+ * Object Storage, OCI Object Storage (via its S3-compatibility endpoint), Cloudflare R2, Backblaze
+ * B2, and MinIO, since all of them speak the same API. This is deliberately the storage binding to
+ * reach for when portability matters: it makes "which cloud hosts our files" a config change
+ * (`S3_ENDPOINT`) rather than a code change, which is exactly what a future AWS/Hetzner migration
+ * needs.
+ *
+ * Notably it does NOT share OciStorageProvider's Content-Disposition limitation. S3 presigned URLs
+ * accept `ResponseContentDisposition` at *signing* time, so the caller-supplied display filename is
+ * honoured per download — matching GcsStorageProvider's behaviour exactly, and satisfying ADR-0006's
+ * "attachment; filename*=..." requirement properly rather than via a generic fallback.
+ *
+ * Credentials come from the AWS SDK's default provider chain (env vars, shared config file, or an
+ * instance/task role) — the same "ambient identity, no static keys in code" pattern as GCS's ADC and
+ * OCI's instance principals. Not exercised by any test: like the other production bindings, it needs
+ * live credentials this environment doesn't have.
+ */
+export class S3StorageProvider implements StorageProvider {
+  private readonly client: S3Client;
+
+  constructor(
+    private readonly bucketName: string,
+    opts: { region: string; endpoint?: string; forcePathStyle?: boolean } = { region: 'eu-central-1' },
+  ) {
+    this.client = new S3Client({
+      region: opts.region,
+      // Unset for real AWS; set for Hetzner / OCI-compat / R2 / MinIO.
+      ...(opts.endpoint ? { endpoint: opts.endpoint } : {}),
+      // Most non-AWS S3 implementations need path-style addressing rather than virtual-hosted-style.
+      ...(opts.forcePathStyle === undefined ? {} : { forcePathStyle: opts.forcePathStyle }),
+    });
+  }
+
+  async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: data, ContentType: opts.contentType }),
+    );
+  }
+
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+    const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
+    const url = await getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        // Forced at signing time — the file is never rendered inline regardless of its real type
+        // (sec §4.4), and the untrusted display name is RFC 5987-encoded, never interpolated raw.
+        ResponseContentDisposition: `attachment; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
+        ResponseContentType: 'application/octet-stream',
+      }),
+      { expiresIn: SIGNED_URL_TTL_MS / 1000 }, // seconds, unlike the ms used everywhere else here
+    );
+    return { url, expiresAt };
+  }
+
+  async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
+      return true;
+    } catch (err) {
+      // S3 signals a missing key as NotFound/404. Checked both ways: some S3-compatible
+      // implementations set the error name differently than AWS does, but all set the status code.
+      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+      if (status === 404 || (err as { name?: string })?.name === 'NotFound') return false;
+      throw err;
+    }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    // S3's DeleteObject is already idempotent — deleting an absent key succeeds — so unlike the GCS
+    // and OCI bindings this needs no explicit not-found handling for a retried purge to be safe.
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
   }
 }

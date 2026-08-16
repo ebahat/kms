@@ -1,6 +1,6 @@
 # ADR-0015: Pre-Revenue Single-VM Topology (OCI Always Free)
 
-**Status:** Proposed (2026-08-16) — awaiting review
+**Status:** Accepted (2026-08-16)
 **Date:** 2026-08-16
 **Deciders:** Product owner (Ehud)
 **Sources:** [ADR-0014](0014-hosting-topology-oci.md) (retargeted, not superseded), ADR-0006 (storage/serving),
@@ -10,7 +10,7 @@ ADR-0003 (worker pools — deferred), PRD §3 (EU residency), §13 (availability
 
 ## Status
 
-Proposed. **Does not supersede ADR-0014** — it retargets it. ADR-0014 stays the documented
+Accepted 2026-08-16 (owner approved after review). **Does not supersede ADR-0014** — it retargets it. ADR-0014 stays the documented
 *scale-up* topology (managed Container Instances / OCI Cache / LB+WAF) for when there are paying
 customers and managed-HA is worth paying for. This ADR is the *starting* topology for a pre-revenue
 system with zero users.
@@ -133,9 +133,20 @@ technical risk.
 ### Storage provider
 
 `OciStorageProvider` (built under ADR-0014) is unchanged and still correct — Object Storage is used
-identically here. Recommended follow-up, not required by this ADR: add an `S3StorageProvider`, since
-OCI Object Storage, Hetzner, AWS, MinIO, R2 and B2 are all S3-compatible, making the storage layer
-portable in one class rather than one-per-cloud.
+identically here.
+
+**`S3StorageProvider` added 2026-08-17** (was a follow-up; built immediately, since it is the single
+highest-leverage thing for exit-cost). One class covers AWS S3, Hetzner Object Storage, OCI Object
+Storage (via its S3-compatibility endpoint), Cloudflare R2, Backblaze B2 and MinIO — so "which cloud
+holds our files" becomes an `S3_ENDPOINT` config change rather than a code change. Selected via
+`S3_DATA_BUCKET`/`S3_REGION`/`S3_ENDPOINT`/`S3_FORCE_PATH_STYLE`, taking precedence over the GCS and
+OCI bindings in `documents.providers.ts` (first-match-wins; a deployment targets one cloud).
+
+It also **does not** inherit `OciStorageProvider`'s Content-Disposition limitation: S3 presigned URLs
+accept `ResponseContentDisposition` at signing time, so the caller's display filename is honoured per
+download, matching `GcsStorageProvider` and satisfying ADR-0006 properly rather than via the generic
+`attachment` fallback OCI PARs force. That makes S3 the *preferred* binding on capability grounds,
+not only portability grounds.
 
 ### What is explicitly given up
 
@@ -158,6 +169,14 @@ portable in one class rather than one-per-cloud.
 - **Negative / accepted risks:** single point of failure with no automated recovery; self-hosted
   Redis and Caddy are new ops surface; arm64 build unproven at time of writing; PRD §13's availability
   targets are not met and must not be claimed until ADR-0014's topology is applied.
-- **Follow-ups:** prove the arm64 build; `S3StorageProvider` for storage portability; a `mongodump`
-  backup script while on Atlas M0; revisit this ADR the moment there is a paying customer or real
-  document volume — the trigger to apply ADR-0014 is *revenue or data*, not calendar time.
+- **Follow-ups:** prove the arm64 build; a `mongodump` backup script while on Atlas M0; revisit this
+  ADR the moment there is a paying customer or real document volume — the trigger to apply ADR-0014 is
+  *revenue or data*, not calendar time. (`S3StorageProvider` — **done 2026-08-17**, see above.)
+- **Exit cost, deliberately kept low.** With `S3StorageProvider` in place, migrating to AWS or Hetzner
+  is: `rclone sync` the two buckets, copy 5 secret values, rewrite ~20 Terraform resources, redeploy
+  the same `docker-compose.yml`. Atlas is external and needs no migration at all; Redis is ephemeral
+  by design (ADR-0003/0004) and needs none either. The one latent lock-in risk to design around is
+  `KmsKeyProvider`: TOTP secrets are currently envelope-encrypted under a portable
+  `KMS_MASTER_KEY_HEX`, and switching to a cloud KMS with a **non-exportable** key would make every
+  TOTP secret decryptable only inside that cloud — plan that re-encryption path *when* building
+  `OciKeyProvider`, not after.
