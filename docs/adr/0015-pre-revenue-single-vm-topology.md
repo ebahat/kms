@@ -141,6 +141,15 @@ exact directory layout in the final stage (`WORKDIR /repo/apps/api`, `COPY ... /
 was shipping the full 5.6 GB working tree, including `.worktrees/`, on every build). All three bugs
 would have hit an amd64 build identically — arm64 itself was never the problem.
 
+Same day, `apps/portal-api/Dockerfile` got the identical fix (same bug, same shape) and
+`apps/web/Dockerfile` was rebuilt around Next's `output: 'standalone'` (`next.config.mjs` sets
+`outputFileTracingRoot` to the monorepo root) instead of the copy-`/repo`-layout workaround — Next
+traces only the dependencies actually used into a self-contained bundle, sidestepping the pnpm-symlink
+problem rather than working around it. All three images (`api`, `portal-api`, `web`) are now
+build-and-boot verified on `arm64`: each starts its server (Nest bootstrapping / Next's `Ready in
+321ms`), and `web`'s standalone server was confirmed serving a real rendered page
+(`curl localhost:.../login` → HTTP 200, Hebrew RTL markup, `/_next/static` assets resolving).
+
 ### Storage provider
 
 `OciStorageProvider` (built under ADR-0014) is unchanged and still correct — Object Storage is used
