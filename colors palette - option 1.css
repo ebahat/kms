@@ -1,0 +1,43 @@
+colors palette - option 1
+
+--text: #0e0a17;
+--background: #faf8fd;
+--primary: #2a8346;
+--secondary: #1422a7;
+--accent: #2143df;
+
+--text: rgb(14, 10, 23);
+--background: rgb(250, 248, 253);
+--primary: rgb(42, 131, 70);
+--secondary: rgb(20, 34, 167);
+--accent: rgb(33, 67, 223);
+
+===
+
+--text: #0e1214;
+--background: #fbfcfd;
+--primary: #5e93b9;
+--secondary: #9fc5e0;
+--accent: #6daedd;
+
+
+--text: rgb(14, 18, 20);
+--background: rgb(251, 252, 253);
+--primary: rgb(94, 147, 185);
+--secondary: rgb(159, 197, 224);
+--accent: rgb(109, 174, 221);
+
+
+option 2
+--text: rgb(5, 11, 6);
+--background: rgb(240, 249, 241);
+--primary: rgb(86, 194, 95);
+--secondary: rgb(149, 221, 155);
+--accent: rgb(103, 213, 113);
+
+--text: #050b06;
+--background: #f0f9f1;
+--primary: #56c25f;
+--secondary: #95dd9b;
+--accent: #67d571;
+

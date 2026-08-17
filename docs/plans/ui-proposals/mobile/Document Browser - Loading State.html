@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Enterprise Knowledge Base - Loading Skeleton</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&amp;family=Courier+Prime&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#e5e1e9",
+                        "on-secondary-fixed-variant": "#3e4755",
+                        "primary-container": "#312e81",
+                        "primary": "#1a146b",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#1b1b21",
+                        "error": "#ba1a1a",
+                        "on-secondary-container": "#596372",
+                        "on-primary-container": "#9c9af4",
+                        "on-error": "#ffffff",
+                        "surface-container": "#f0ecf4",
+                        "surface-container-low": "#f6f2fa",
+                        "on-tertiary-fixed-variant": "#70380b",
+                        "tertiary-container": "#5f2b00",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e5e1e9",
+                        "on-primary-fixed": "#100563",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#d6e0f1",
+                        "tertiary-fixed": "#ffdbc7",
+                        "on-tertiary-fixed": "#311300",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "outline": "#777682",
+                        "on-secondary": "#ffffff",
+                        "surface": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#3e1a00",
+                        "surface-dim": "#dcd9e0",
+                        "surface-container-high": "#eae7ef",
+                        "inverse-on-surface": "#f3eff7",
+                        "secondary-fixed-dim": "#bdc7d8",
+                        "tertiary-fixed-dim": "#ffb688",
+                        "on-tertiary-container": "#de915e",
+                        "on-primary-fixed-variant": "#3e3c8f",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed": "#121c28",
+                        "on-background": "#1b1b21",
+                        "inverse-surface": "#303036",
+                        "secondary": "#555f6d",
+                        "secondary-fixed": "#d9e3f4",
+                        "surface-bright": "#fcf8ff",
+                        "outline-variant": "#c8c5d3",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#5654a8",
+                        "on-surface-variant": "#474651",
+                        "background": "#fcf8ff",
+                        "inverse-primary": "#c3c0ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "nav-width-expanded": "280px",
+                        "nav-width-collapsed": "64px",
+                        "unit": "4px",
+                        "row-height-standard": "56px",
+                        "container-padding": "24px",
+                        "row-height-dense": "40px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Rubik"],
+                        "body-md": ["Rubik"],
+                        "title-sm": ["Rubik"],
+                        "label-xs": ["Rubik"],
+                        "display-lg": ["Rubik"],
+                        "code-sm": ["Courier Prime"],
+                        "headline-md": ["Rubik"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "title-sm": ["18px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "label-xs": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display-lg": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .skeleton-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: .5;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen font-body-md flex md:flex-row flex-col">
+<!-- TopAppBar (Mobile & Desktop Header) -->
+<header class="bg-surface dark:bg-surface-dim font-headline-md text-headline-md docked full-width top-0 border-b border-outline-variant dark:border-outline flat no shadows flex flex-row-reverse justify-between items-center w-full px-container-padding h-row-height-standard md:hidden sticky z-40">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" data-icon="search">search</span>
+</div>
+<div class="font-headline-md text-headline-md font-semibold text-primary dark:text-primary-fixed-dim">
+            מאגר ידע ארגוני
+        </div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface-variant dark:text-on-surface-variant" data-icon="menu">menu</span>
+</div>
+</header>
+<!-- NavigationDrawer (Desktop) -->
+<nav class="hidden md:flex bg-surface dark:bg-surface-dim font-body-md text-body-md fixed right-0 top-0 h-full w-nav-width-expanded border-l border-outline-variant dark:border-outline flat no shadows flex-col overflow-y-auto z-40">
+<!-- Header Profile -->
+<div class="p-container-padding border-b border-outline-variant flex items-center justify-start gap-4 flex-row-reverse">
+<div class="w-12 h-12 rounded-full bg-surface-container-high skeleton-pulse"></div>
+<div class="text-right">
+<div class="h-4 bg-surface-container-high rounded w-24 mb-2 skeleton-pulse"></div>
+<div class="h-3 bg-surface-container-high rounded w-16 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Nav Items -->
+<div class="flex flex-col mt-4">
+<a class="flex items-center gap-4 px-container-padding py-4 text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer flex-row-reverse bg-secondary-container text-on-secondary-container font-bold border-r-4 border-primary" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span>מסמכים</span>
+</a>
+<a class="flex items-center gap-4 px-container-padding py-4 text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer flex-row-reverse" href="#">
+<span class="material-symbols-outlined" data-icon="folder_shared">folder_shared</span>
+<span>תיקיות משותפות</span>
+</a>
+<a class="flex items-center gap-4 px-container-padding py-4 text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer flex-row-reverse" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+<span>ארכיון</span>
+</a>
+<a class="flex items-center gap-4 px-container-padding py-4 text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer flex-row-reverse" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>הגדרות</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 md:mr-nav-width-expanded p-container-padding md:p-8 flex flex-col gap-6">
+<!-- Desktop Header Anchor -->
+<div class="hidden md:flex flex-col gap-2 mb-6">
+<h1 class="font-headline-md text-headline-md font-bold text-primary">מאגר ידע ארגוני</h1>
+<!-- Static Breadcrumb Skeleton -->
+<div class="flex items-center gap-2 flex-row-reverse">
+<div class="h-4 bg-surface-variant rounded w-16 skeleton-pulse"></div>
+<span class="text-outline-variant text-label-xs">&lt;</span>
+<div class="h-4 bg-surface-variant rounded w-20 skeleton-pulse"></div>
+<span class="text-outline-variant text-label-xs">&lt;</span>
+<div class="h-4 bg-surface-container-highest rounded w-24 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Document List Skeleton Area -->
+<div class="flex flex-col gap-unit bg-surface border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+<!-- List Header Row (Optional context, also skeletonized) -->
+<div class="flex flex-row-reverse items-center justify-between p-4 border-b border-outline-variant bg-surface-container-lowest">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="h-4 bg-surface-variant rounded w-8 skeleton-pulse"></div>
+<div class="h-4 bg-surface-variant rounded w-32 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-variant rounded w-24 skeleton-pulse hidden md:block"></div>
+<div class="h-4 bg-surface-variant rounded w-20 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Skeleton Row 1 -->
+<div class="flex flex-row-reverse items-center justify-between p-4 h-row-height-dense border-b border-outline-variant bg-surface hover:bg-surface-container-lowest transition-colors">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="h-5 bg-surface-container-highest rounded w-48 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-container-high rounded w-24 skeleton-pulse hidden md:block"></div>
+<div class="h-6 bg-surface-container-highest rounded-full w-20 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Skeleton Row 2 -->
+<div class="flex flex-row-reverse items-center justify-between p-4 h-row-height-dense border-b border-outline-variant bg-surface hover:bg-surface-container-lowest transition-colors">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="h-5 bg-surface-container-highest rounded w-64 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-container-high rounded w-20 skeleton-pulse hidden md:block"></div>
+<div class="h-6 bg-surface-container-highest rounded-full w-24 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Skeleton Row 3 -->
+<div class="flex flex-row-reverse items-center justify-between p-4 h-row-height-dense border-b border-outline-variant bg-surface hover:bg-surface-container-lowest transition-colors">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="h-5 bg-surface-container-highest rounded w-40 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-container-high rounded w-28 skeleton-pulse hidden md:block"></div>
+<div class="h-6 bg-surface-container-highest rounded-full w-16 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Skeleton Row 4 -->
+<div class="flex flex-row-reverse items-center justify-between p-4 h-row-height-dense border-b border-outline-variant bg-surface hover:bg-surface-container-lowest transition-colors">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="h-5 bg-surface-container-highest rounded w-56 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-container-high rounded w-24 skeleton-pulse hidden md:block"></div>
+<div class="h-6 bg-surface-container-highest rounded-full w-24 skeleton-pulse"></div>
+</div>
+</div>
+<!-- Skeleton Row 5 -->
+<div class="flex flex-row-reverse items-center justify-between p-4 h-row-height-dense bg-surface hover:bg-surface-container-lowest transition-colors">
+<div class="flex flex-row-reverse items-center gap-4 w-1/2">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="h-5 bg-surface-container-highest rounded w-52 skeleton-pulse"></div>
+</div>
+<div class="flex flex-row-reverse items-center gap-8 w-1/2 justify-end">
+<div class="h-4 bg-surface-container-high rounded w-32 skeleton-pulse hidden md:block"></div>
+<div class="h-6 bg-surface-container-highest rounded-full w-20 skeleton-pulse"></div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface-container dark:bg-surface-container-lowest font-label-xs text-label-xs fixed bottom-0 w-full z-50 md:hidden border-t border-outline-variant dark:border-outline shadow-md flex flex-row-reverse justify-around items-center h-row-height-standard pb-safe">
+<a class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-4 py-1 active:scale-95 transition-transform hover:bg-surface-variant dark:hover:bg-on-secondary-container" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span>ראשי</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant dark:hover:bg-on-secondary-container" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span>חיפוש</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant dark:hover:bg-on-secondary-container" href="#">
+<span class="material-symbols-outlined" data-icon="star">star</span>
+<span>מועדפים</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant dark:hover:bg-on-secondary-container" href="#">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span>התראות</span>
+</a>
+</nav>
+</body></html>

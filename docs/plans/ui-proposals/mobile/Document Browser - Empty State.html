@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Enterprise Knowledge Base - Empty State</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#e5e1e9",
+                        "on-secondary-fixed-variant": "#3e4755",
+                        "primary-container": "#312e81",
+                        "primary": "#1a146b",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#1b1b21",
+                        "error": "#ba1a1a",
+                        "on-secondary-container": "#596372",
+                        "on-primary-container": "#9c9af4",
+                        "on-error": "#ffffff",
+                        "surface-container": "#f0ecf4",
+                        "surface-container-low": "#f6f2fa",
+                        "on-tertiary-fixed-variant": "#70380b",
+                        "tertiary-container": "#5f2b00",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e5e1e9",
+                        "on-primary-fixed": "#100563",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#d6e0f1",
+                        "tertiary-fixed": "#ffdbc7",
+                        "on-tertiary-fixed": "#311300",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "outline": "#777682",
+                        "on-secondary": "#ffffff",
+                        "surface": "#fcf8ff",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#3e1a00",
+                        "surface-dim": "#dcd9e0",
+                        "surface-container-high": "#eae7ef",
+                        "inverse-on-surface": "#f3eff7",
+                        "secondary-fixed-dim": "#bdc7d8",
+                        "tertiary-fixed-dim": "#ffb688",
+                        "on-tertiary-container": "#de915e",
+                        "on-primary-fixed-variant": "#3e3c8f",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed": "#121c28",
+                        "on-background": "#1b1b21",
+                        "inverse-surface": "#303036",
+                        "secondary": "#555f6d",
+                        "secondary-fixed": "#d9e3f4",
+                        "surface-bright": "#fcf8ff",
+                        "outline-variant": "#c8c5d3",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#5654a8",
+                        "on-surface-variant": "#474651",
+                        "background": "#fcf8ff",
+                        "inverse-primary": "#c3c0ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "nav-width-expanded": "280px",
+                        "nav-width-collapsed": "64px",
+                        "unit": "4px",
+                        "row-height-standard": "56px",
+                        "container-padding": "24px",
+                        "row-height-dense": "40px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Rubik"],
+                        "body-md": ["Rubik"],
+                        "title-sm": ["Rubik"],
+                        "label-xs": ["Rubik"],
+                        "display-lg": ["Rubik"],
+                        "code-sm": ["Courier Prime"],
+                        "headline-md": ["Rubik"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "title-sm": ["18px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "label-xs": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display-lg": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Rubik', sans-serif; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md">
+<!-- TopAppBar -->
+<header class="flex flex-row-reverse justify-between items-center w-full px-container-padding h-row-height-standard bg-surface border-b border-outline-variant flat no shadows full-width top-0">
+<div class="flex items-center gap-gutter">
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">menu</button>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary">מאגר ידע ארגוני</h1>
+</div>
+<div>
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">search</button>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- NavigationDrawer (Desktop) -->
+<aside class="hidden md:flex flex-col h-full overflow-y-auto w-nav-width-expanded bg-surface border-l border-outline-variant flat no shadows shrink-0 z-10">
+<div class="p-4 border-b border-outline-variant flex items-center justify-between">
+<div class="flex items-center gap-3">
+<img alt="משתמש ארגוני" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A professional headshot of a corporate employee on a clean white background. High resolution, bright lighting, conveying reliability and professionalism." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuACq57ysT-fzl4ZLWML4M0OSQtpnbyUxRY4WB14INYlTCq9KsfaW34mDucAoPkm-EaQ67a2tkTxGtICraH4HVf6jAJFFZ_KJgtgmAHlj3cIktT6YPJiWg9aOwVXf0jteyzTjehHG6lA4E2vxNHCZH3a144FKZWXeSvoQxztx1GZtZ2nSIxlqJdl-nf8eKnr2oGYzvq_1Wmrwe_oOdEOpdOtaSDfXzflvnFHa4FAC6svOqdfd1fTEN"/>
+<div>
+<div class="font-title-sm text-title-sm font-semibold text-on-surface">ישראל ישראלי</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">מנהל ידע</div>
+</div>
+</div>
+</div>
+<nav class="flex-1 py-4">
+<ul class="flex flex-col gap-1 px-2">
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary-container text-on-secondary-container font-bold border-r-4 border-primary hover:bg-surface-container transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+<span class="font-body-md text-body-md">מסמכים</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">folder_shared</span>
+<span class="font-body-md text-body-md">תיקיות משותפות</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-body-md text-body-md">ארכיון</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">הגדרות</span>
+</a>
+</li>
+</ul>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col bg-surface-container-lowest overflow-y-auto relative">
+<!-- Breadcrumbs -->
+<div class="px-container-padding py-4 border-b border-outline-variant bg-surface">
+<nav class="flex items-center text-on-surface-variant font-body-sm text-body-sm">
+<a class="hover:text-primary transition-colors" href="#">Home</a>
+<span class="material-symbols-outlined mx-2 text-[16px]">chevron_left</span>
+<a class="hover:text-primary transition-colors" href="#">Documents</a>
+<span class="material-symbols-outlined mx-2 text-[16px]">chevron_left</span>
+<span class="text-on-surface font-medium">New Project</span>
+</nav>
+</div>
+<!-- Empty State Canvas -->
+<div class="flex-1 flex flex-col items-center justify-center p-8 text-center">
+<div class="w-64 h-64 mb-6 rounded-2xl bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-[100px] text-outline-variant" style="font-variation-settings: 'FILL' 0; font-weight: 200;">folder_open</span>
+</div>
+<h2 class="font-display-lg text-display-lg text-on-surface mb-4">התיקייה הזו ריקה</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8 max-w-md">
+                    העלו את הקובץ הראשון שלכם או צרו תיקייה חדשה כדי להתחיל
+                </p>
+<div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+<button class="bg-primary text-on-primary font-title-sm text-title-sm px-6 py-3 rounded-full hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[20px]">upload</span>
+                        העלאת קבצים
+                    </button>
+<button class="bg-surface text-on-surface-variant border border-outline font-title-sm text-title-sm px-6 py-3 rounded-full hover:bg-surface-variant hover:text-on-surface transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[20px]">create_new_folder</span>
+                        יצירת תיקייה חדשה
+                    </button>
+</div>
+</div>
+<!-- Subtle atmospheric shader in background -->
+
+</main>
+</div>
+<!-- BottomNavBar (Mobile) -->
+<nav class="fixed bottom-0 w-full z-50 md:hidden flex flex-row-reverse justify-around items-center h-row-height-standard pb-safe bg-surface-container border-t border-outline-variant shadow-md">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 active:scale-95 transition-transform hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+<span class="font-label-xs text-label-xs mt-1">מסמכים</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="font-label-xs text-label-xs mt-1">חיפוש</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">star</span>
+<span class="font-label-xs text-label-xs mt-1">מועדפים</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform hover:bg-surface-variant px-4 py-1 rounded-full" href="#">
+<span class="material-symbols-outlined">notifications</span>
+<span class="font-label-xs text-label-xs mt-1">התראות</span>
+</a>
+</nav>
+</body></html>

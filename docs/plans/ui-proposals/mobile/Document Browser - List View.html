@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Enterprise Knowledge Base - Document Browser</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&amp;family=Courier+Prime&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "surface-variant": "#e5e1e9",
+                "on-secondary-fixed-variant": "#3e4755",
+                "primary-container": "#312e81",
+                "primary": "#1a146b",
+                "on-primary": "#ffffff",
+                "on-surface": "#1b1b21",
+                "error": "#ba1a1a",
+                "on-secondary-container": "#596372",
+                "on-primary-container": "#9c9af4",
+                "on-error": "#ffffff",
+                "surface-container": "#f0ecf4",
+                "surface-container-low": "#f6f2fa",
+                "on-tertiary-fixed-variant": "#70380b",
+                "tertiary-container": "#5f2b00",
+                "error-container": "#ffdad6",
+                "surface-container-highest": "#e5e1e9",
+                "on-primary-fixed": "#100563",
+                "on-tertiary": "#ffffff",
+                "secondary-container": "#d6e0f1",
+                "tertiary-fixed": "#ffdbc7",
+                "on-tertiary-fixed": "#311300",
+                "primary-fixed-dim": "#c3c0ff",
+                "outline": "#777682",
+                "on-secondary": "#ffffff",
+                "surface": "#fcf8ff",
+                "on-error-container": "#93000a",
+                "tertiary": "#3e1a00",
+                "surface-dim": "#dcd9e0",
+                "surface-container-high": "#eae7ef",
+                "inverse-on-surface": "#f3eff7",
+                "secondary-fixed-dim": "#bdc7d8",
+                "tertiary-fixed-dim": "#ffb688",
+                "on-tertiary-container": "#de915e",
+                "on-primary-fixed-variant": "#3e3c8f",
+                "surface-container-lowest": "#ffffff",
+                "on-secondary-fixed": "#121c28",
+                "on-background": "#1b1b21",
+                "inverse-surface": "#303036",
+                "secondary": "#555f6d",
+                "secondary-fixed": "#d9e3f4",
+                "surface-bright": "#fcf8ff",
+                "outline-variant": "#c8c5d3",
+                "primary-fixed": "#e2dfff",
+                "surface-tint": "#5654a8",
+                "on-surface-variant": "#474651",
+                "background": "#fcf8ff",
+                "inverse-primary": "#c3c0ff"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "nav-width-expanded": "280px",
+                "nav-width-collapsed": "64px",
+                "unit": "4px",
+                "row-height-standard": "56px",
+                "container-padding": "24px",
+                "row-height-dense": "40px",
+                "gutter": "16px"
+        },
+        "fontFamily": {
+                "body-sm": [
+                        "Rubik"
+                ],
+                "body-md": [
+                        "Rubik"
+                ],
+                "title-sm": [
+                        "Rubik"
+                ],
+                "label-xs": [
+                        "Rubik"
+                ],
+                "display-lg": [
+                        "Rubik"
+                ],
+                "code-sm": [
+                        "Courier Prime"
+                ],
+                "headline-md": [
+                        "Rubik"
+                ]
+        },
+        "fontSize": {
+                "body-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "body-md": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "title-sm": [
+                        "18px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "label-xs": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.02em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "display-lg": [
+                        "30px",
+                        {
+                                "lineHeight": "38px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "code-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+    /* Prevent layout shift during scroll */
+    html { overflow-y: scroll; }
+    
+    /* Document Row Hover Effects */
+    .doc-row {
+        transition: background-color 0.15s ease-in-out;
+    }
+    .doc-row:hover {
+        background-color: #f6f2fa; /* surface-container-low */
+    }
+</style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col md:flex-row antialiased">
+<!-- Navigation Drawer (Desktop) -->
+<aside class="hidden md:flex flex-col bg-surface dark:bg-surface-dim border-l border-outline-variant dark:border-outline fixed right-0 top-0 h-full w-nav-width-expanded z-40 overflow-y-auto">
+<!-- Header Profile -->
+<div class="p-container-padding flex flex-col items-end border-b border-outline-variant">
+<div class="flex items-center gap-3 w-full justify-end">
+<div class="text-right">
+<h2 class="font-headline-md text-headline-md text-primary dark:text-primary-fixed-dim">ישראל ישראלי</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">מנהל ידע</p>
+<span class="inline-flex items-center gap-1 font-label-xs text-label-xs text-secondary mt-1">
+<span class="w-2 h-2 rounded-full bg-green-500"></span> מחובר
+                    </span>
+</div>
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined">person</span>
+</div>
+</div>
+</div>
+<!-- Nav Links -->
+<nav class="flex-1 py-4">
+<ul class="flex flex-col gap-1 px-3">
+<li>
+<!-- Active State -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-secondary-container dark:bg-secondary-fixed text-on-secondary-container dark:text-on-secondary-fixed font-bold border-r-4 border-primary" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">description</span>
+<span>מסמכים</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">folder_shared</span>
+<span>תיקיות משותפות</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span>ארכיון</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-low transition-all cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>הגדרות</span>
+</a>
+</li>
+</ul>
+</nav>
+</aside>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col md:mr-nav-width-expanded min-w-0 pb-row-height-standard md:pb-0">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim font-headline-md text-headline-md text-primary dark:text-primary-fixed-dim docked full-width top-0 border-b border-outline-variant dark:border-outline flex flex-row-reverse justify-between items-center w-full px-container-padding h-row-height-standard z-30 sticky">
+<div class="flex items-center gap-4">
+<button class="md:hidden text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors active:opacity-80 transition-opacity p-2 rounded-full">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary dark:text-primary-fixed-dim">מאגר ידע ארגוני</h1>
+</div>
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors active:opacity-80 transition-opacity p-2 rounded-full">
+<span class="material-symbols-outlined">search</span>
+</button>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 p-gutter md:p-container-padding overflow-x-hidden">
+<!-- Breadcrumbs -->
+<nav aria-label="Breadcrumb" class="flex items-center text-body-sm font-body-sm text-on-surface-variant mb-6">
+<ol class="inline-flex items-center gap-2">
+<li class="inline-flex items-center">
+<a class="hover:text-primary transition-colors" href="#">Home</a>
+</li>
+<li>
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</li>
+<li class="inline-flex items-center">
+<a class="hover:text-primary transition-colors" href="#">Documents</a>
+</li>
+<li>
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</li>
+<li aria-current="page" class="font-medium text-on-surface">
+                        Q4 Reports
+                    </li>
+</ol>
+</nav>
+<!-- Document List Container -->
+<div class="bg-surface rounded-xl border border-outline-variant overflow-hidden">
+<!-- List Header (Desktop Only) -->
+<div class="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-outline-variant bg-surface-container-lowest text-label-xs font-label-xs text-on-surface-variant">
+<div class="col-span-5">שם</div>
+<div class="col-span-2">סטטוס</div>
+<div class="col-span-2">גודל</div>
+<div class="col-span-2">תאריך</div>
+<div class="col-span-1 text-left">יוצר</div>
+</div>
+<!-- List Body -->
+<div class="flex flex-col">
+<!-- Row 1: Folder -->
+<div class="doc-row group flex flex-col md:grid md:grid-cols-12 gap-2 md:gap-4 px-4 md:px-6 py-4 md:py-3 border-b border-outline-variant items-center cursor-pointer min-h-row-height-dense">
+<div class="col-span-5 flex items-center gap-3 w-full">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">folder</span>
+<span class="font-title-sm text-title-sm text-on-surface truncate">פיננסים</span>
+</div>
+<div class="col-span-7 flex items-center justify-start md:justify-end gap-3 w-full md:w-auto mt-2 md:mt-0">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-xs text-label-xs">
+<span class="material-symbols-outlined text-[14px]">group</span>
+                                Broader Access
+                            </span>
+</div>
+</div>
+<!-- Row 2: Document (Indexed) -->
+<div class="doc-row group flex flex-col md:grid md:grid-cols-12 gap-2 md:gap-4 px-4 md:px-6 py-4 md:py-3 border-b border-outline-variant items-center cursor-pointer min-h-row-height-dense">
+<div class="col-span-5 flex items-center gap-3 w-full">
+<span class="material-symbols-outlined text-outline">picture_as_pdf</span>
+<span class="font-body-md text-body-md text-on-surface truncate">מדריך למשתמש v2.pdf</span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 text-green-900 font-label-xs text-label-xs border border-green-200">
+<span class="w-2 h-2 rounded-full bg-green-600"></span>
+                                indexed
+                            </span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">1.2MB</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">12/10/23</div>
+<div class="col-span-1 flex items-center justify-start md:justify-end w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">
+                            ישראל ישראלי
+                        </div>
+</div>
+<!-- Row 3: Document (Processing) -->
+<div class="doc-row group flex flex-col md:grid md:grid-cols-12 gap-2 md:gap-4 px-4 md:px-6 py-4 md:py-3 border-b border-outline-variant items-center cursor-pointer min-h-row-height-dense">
+<div class="col-span-5 flex items-center gap-3 w-full">
+<span class="material-symbols-outlined text-outline">description</span>
+<span class="font-body-md text-body-md text-on-surface truncate">Report_Draft_ENG.docx</span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-900 font-label-xs text-label-xs border border-yellow-200">
+<span class="w-2 h-2 rounded-full bg-yellow-600 animate-pulse"></span>
+                                processing
+                            </span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">500KB</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">14/10/23</div>
+<div class="col-span-1 flex items-center justify-start md:justify-end w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">
+                            שרה כהן
+                        </div>
+</div>
+<!-- Row 4: Document (Failed) -->
+<div class="doc-row group flex flex-col md:grid md:grid-cols-12 gap-2 md:gap-4 px-4 md:px-6 py-4 md:py-3 items-center cursor-pointer min-h-row-height-dense">
+<div class="col-span-5 flex items-center gap-3 w-full">
+<span class="material-symbols-outlined text-outline">article</span>
+<span class="font-body-md text-body-md text-on-surface truncate">Error_Log.txt</span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-label-xs text-label-xs border border-error">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                                failed
+                            </span>
+</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">10KB</div>
+<div class="col-span-2 flex items-center w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">15/10/23</div>
+<div class="col-span-1 flex items-center justify-start md:justify-end w-full md:w-auto text-body-sm font-body-sm text-on-surface-variant">
+                            מערכת
+                        </div>
+</div>
+</div>
+</div>
+<!-- Floating Action Button -->
+<button class="fixed bottom-24 md:bottom-8 left-6 w-14 h-14 bg-primary text-on-primary rounded-2xl shadow-lg flex items-center justify-center hover:bg-primary-container hover:shadow-xl transition-all active:scale-95 z-50">
+<span class="material-symbols-outlined">add</span>
+</button>
+</main>
+</div>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface-container dark:bg-surface-container-lowest font-label-xs text-label-xs fixed bottom-0 w-full z-50 md:hidden border-t border-outline-variant dark:border-outline shadow-md flex flex-row-reverse justify-around items-center h-row-height-standard w-full pb-safe">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform p-2 w-16" href="#">
+<span class="material-symbols-outlined mb-1">home</span>
+<span>ראשי</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform p-2 w-16" href="#">
+<span class="material-symbols-outlined mb-1">search</span>
+<span>חיפוש</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-4 py-1 active:scale-95 transition-transform w-16" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">star</span>
+<span>מועדפים</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform p-2 w-16" href="#">
+<span class="material-symbols-outlined mb-1">notifications</span>
+<span>התראות</span>
+</a>
+</nav>
+</body></html>

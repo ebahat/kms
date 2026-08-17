@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>טוען מסמכים...</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&amp;family=Courier+Prime&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-dim": "#dcd9e0",
+                        "tertiary-container": "#5f2b00",
+                        "surface-container": "#f0ecf4",
+                        "on-surface": "#1b1b21",
+                        "on-secondary-fixed": "#121c28",
+                        "on-tertiary-fixed": "#311300",
+                        "secondary-fixed": "#d9e3f4",
+                        "surface-container-highest": "#e5e1e9",
+                        "surface-container-high": "#eae7ef",
+                        "surface-container-low": "#f6f2fa",
+                        "secondary-fixed-dim": "#bdc7d8",
+                        "error": "#ba1a1a",
+                        "outline-variant": "#c8c5d3",
+                        "on-tertiary": "#ffffff",
+                        "surface": "#fcf8ff",
+                        "background": "#fcf8ff",
+                        "primary": "#1a146b",
+                        "surface-variant": "#e5e1e9",
+                        "inverse-surface": "#303036",
+                        "inverse-on-surface": "#f3eff7",
+                        "on-background": "#1b1b21",
+                        "surface-tint": "#5654a8",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-surface-variant": "#474651",
+                        "secondary-container": "#d6e0f1",
+                        "on-tertiary-fixed-variant": "#70380b",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#3e4755",
+                        "on-error": "#ffffff",
+                        "primary-fixed": "#e2dfff",
+                        "primary-container": "#312e81",
+                        "surface-bright": "#fcf8ff",
+                        "tertiary-fixed-dim": "#ffb688",
+                        "on-primary-container": "#9c9af4",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed-variant": "#3e3c8f",
+                        "on-primary-fixed": "#100563",
+                        "secondary": "#555f6d",
+                        "on-tertiary-container": "#de915e",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-secondary-container": "#596372",
+                        "tertiary-fixed": "#ffdbc7",
+                        "on-secondary": "#ffffff",
+                        "outline": "#777682",
+                        "tertiary": "#3e1a00"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "container-padding": "24px",
+                        "row-height-standard": "56px",
+                        "nav-width-expanded": "280px",
+                        "nav-width-collapsed": "64px",
+                        "row-height-dense": "40px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Rubik"],
+                        "label-xs": ["Rubik"],
+                        "headline-md": ["Rubik"],
+                        "display-lg": ["Rubik"],
+                        "title-sm": ["Rubik"],
+                        "body-sm": ["Rubik"],
+                        "code-sm": ["Courier Prime"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-xs": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display-lg": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "title-sm": ["18px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .skeleton-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim font-headline-md text-headline-md docked full-width top-0 border-b border-outline-variant dark:border-outline flat no shadows flex flex-row-reverse justify-between items-center w-full px-container-padding h-row-height-standard z-50 sticky">
+<div class="flex items-center gap-4 flex-row-reverse">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-surface-container-high p-2 rounded-full transition-colors active:opacity-80">menu</span>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary dark:text-primary-fixed-dim">מאגר ידע ארגוני</h1>
+</div>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-surface-container-high p-2 rounded-full transition-colors active:opacity-80">search</span>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- NavigationDrawer -->
+<nav class="bg-surface dark:bg-surface-dim font-body-md text-body-md hidden md:flex flex-col border-l border-outline-variant dark:border-outline flat no shadows w-nav-width-expanded h-full overflow-y-auto shrink-0 relative z-40 pb-20">
+<div class="p-container-padding border-b border-outline-variant flex justify-start items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-high skeleton-pulse shrink-0"></div>
+<div class="flex flex-col gap-2 w-full">
+<div class="h-4 bg-surface-container-high rounded w-3/4 skeleton-pulse"></div>
+<div class="h-3 bg-surface-container-high rounded w-1/2 skeleton-pulse"></div>
+</div>
+</div>
+<ul class="flex flex-col pt-4">
+<!-- Nav Item Skeleton 1 -->
+<li class="px-container-padding py-3 flex items-center gap-4 cursor-pointer hover:bg-surface-container transition-all">
+<div class="w-6 h-6 rounded bg-surface-container-high skeleton-pulse shrink-0"></div>
+<div class="h-4 bg-surface-container-high rounded w-1/2 skeleton-pulse"></div>
+</li>
+<!-- Nav Item Skeleton 2 -->
+<li class="px-container-padding py-3 flex items-center gap-4 cursor-pointer hover:bg-surface-container transition-all">
+<div class="w-6 h-6 rounded bg-surface-container-high skeleton-pulse shrink-0"></div>
+<div class="h-4 bg-surface-container-high rounded w-2/3 skeleton-pulse"></div>
+</li>
+<!-- Nav Item Skeleton 3 -->
+<li class="px-container-padding py-3 flex items-center gap-4 cursor-pointer hover:bg-surface-container transition-all">
+<div class="w-6 h-6 rounded bg-surface-container-high skeleton-pulse shrink-0"></div>
+<div class="h-4 bg-surface-container-high rounded w-1/3 skeleton-pulse"></div>
+</li>
+<!-- Nav Item Skeleton 4 -->
+<li class="px-container-padding py-3 flex items-center gap-4 cursor-pointer hover:bg-surface-container transition-all">
+<div class="w-6 h-6 rounded bg-surface-container-high skeleton-pulse shrink-0"></div>
+<div class="h-4 bg-surface-container-high rounded w-1/2 skeleton-pulse"></div>
+</li>
+</ul>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto bg-background p-container-padding flex flex-col gap-gutter pb-24 md:pb-8">
+<!-- Breadcrumb Skeleton -->
+<div class="flex items-center gap-2 mb-4">
+<div class="h-4 w-16 bg-surface-container-highest rounded skeleton-pulse"></div>
+<span class="material-symbols-outlined text-outline-variant text-sm">chevron_left</span>
+<div class="h-4 w-24 bg-surface-container-highest rounded skeleton-pulse"></div>
+</div>
+<!-- Page Title Skeleton -->
+<div class="h-8 w-48 bg-surface-container-highest rounded mb-6 skeleton-pulse"></div>
+<!-- Toolbar Skeleton -->
+<div class="flex justify-between items-center bg-surface p-2 rounded-lg border border-outline-variant mb-4">
+<div class="flex gap-2">
+<div class="w-24 h-8 bg-surface-container-high rounded skeleton-pulse"></div>
+<div class="w-24 h-8 bg-surface-container-high rounded skeleton-pulse"></div>
+</div>
+<div class="w-8 h-8 bg-surface-container-high rounded-full skeleton-pulse"></div>
+</div>
+<!-- Document List Skeleton (row-height-dense) -->
+<div class="flex flex-col gap-1 border border-outline-variant rounded-lg bg-surface overflow-hidden">
+<!-- Table Header Skeleton -->
+<div class="flex items-center px-4 h-row-height-dense bg-surface-container-low border-b border-outline-variant gap-4">
+<div class="w-6 h-6 bg-surface-container-high rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-high rounded skeleton-pulse max-w-[200px]"></div>
+<div class="w-24 h-4 bg-surface-container-high rounded skeleton-pulse hidden md:block"></div>
+<div class="w-20 h-4 bg-surface-container-high rounded skeleton-pulse hidden sm:block"></div>
+</div>
+<!-- Row 1 -->
+<div class="flex items-center px-4 h-row-height-dense hover:bg-surface-container-lowest transition-colors border-b border-outline-variant gap-4 cursor-wait">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-highest rounded skeleton-pulse max-w-[300px]"></div>
+<div class="w-24 h-4 bg-surface-container-highest rounded skeleton-pulse hidden md:block"></div>
+<div class="w-16 h-6 bg-surface-container-highest rounded-full skeleton-pulse hidden sm:block"></div>
+</div>
+<!-- Row 2 -->
+<div class="flex items-center px-4 h-row-height-dense hover:bg-surface-container-lowest transition-colors border-b border-outline-variant gap-4 cursor-wait">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-highest rounded skeleton-pulse max-w-[250px]"></div>
+<div class="w-24 h-4 bg-surface-container-highest rounded skeleton-pulse hidden md:block"></div>
+<div class="w-20 h-6 bg-surface-container-highest rounded-full skeleton-pulse hidden sm:block"></div>
+</div>
+<!-- Row 3 -->
+<div class="flex items-center px-4 h-row-height-dense hover:bg-surface-container-lowest transition-colors border-b border-outline-variant gap-4 cursor-wait">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-highest rounded skeleton-pulse max-w-[400px]"></div>
+<div class="w-24 h-4 bg-surface-container-highest rounded skeleton-pulse hidden md:block"></div>
+<div class="w-16 h-6 bg-surface-container-highest rounded-full skeleton-pulse hidden sm:block"></div>
+</div>
+<!-- Row 4 -->
+<div class="flex items-center px-4 h-row-height-dense hover:bg-surface-container-lowest transition-colors border-b border-outline-variant gap-4 cursor-wait">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-highest rounded skeleton-pulse max-w-[280px]"></div>
+<div class="w-24 h-4 bg-surface-container-highest rounded skeleton-pulse hidden md:block"></div>
+<div class="w-24 h-6 bg-surface-container-highest rounded-full skeleton-pulse hidden sm:block"></div>
+</div>
+<!-- Row 5 -->
+<div class="flex items-center px-4 h-row-height-dense hover:bg-surface-container-lowest transition-colors gap-4 cursor-wait">
+<div class="w-6 h-6 bg-surface-container-highest rounded skeleton-pulse shrink-0"></div>
+<div class="flex-1 h-4 bg-surface-container-highest rounded skeleton-pulse max-w-[320px]"></div>
+<div class="w-24 h-4 bg-surface-container-highest rounded skeleton-pulse hidden md:block"></div>
+<div class="w-16 h-6 bg-surface-container-highest rounded-full skeleton-pulse hidden sm:block"></div>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="bg-surface-container dark:bg-surface-container-lowest fixed bottom-0 w-full z-50 md:hidden border-t border-outline-variant dark:border-outline shadow-md flex flex-row-reverse justify-around items-center h-row-height-standard pb-safe">
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-full px-4 py-1 font-label-xs text-label-xs active:scale-95 transition-transform">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">home</span>
+<span>ראשי</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant font-label-xs text-label-xs hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform px-4 py-1 rounded-full">
+<span class="material-symbols-outlined mb-1">search</span>
+<span>חיפוש</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant font-label-xs text-label-xs hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform px-4 py-1 rounded-full">
+<span class="material-symbols-outlined mb-1">star</span>
+<span>מועדפים</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant font-label-xs text-label-xs hover:bg-surface-variant dark:hover:bg-on-secondary-container active:scale-95 transition-transform px-4 py-1 rounded-full">
+<span class="material-symbols-outlined mb-1">notifications</span>
+<span>התראות</span>
+</div>
+</nav>
+</body></html>

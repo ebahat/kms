@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="he"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>תיקייה ריקה - מאגר ידע ארגוני</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-dim": "#dcd9e0",
+                      "tertiary-container": "#5f2b00",
+                      "surface-container": "#f0ecf4",
+                      "on-surface": "#1b1b21",
+                      "on-secondary-fixed": "#121c28",
+                      "on-tertiary-fixed": "#311300",
+                      "secondary-fixed": "#d9e3f4",
+                      "surface-container-highest": "#e5e1e9",
+                      "surface-container-high": "#eae7ef",
+                      "surface-container-low": "#f6f2fa",
+                      "secondary-fixed-dim": "#bdc7d8",
+                      "error": "#ba1a1a",
+                      "outline-variant": "#c8c5d3",
+                      "on-tertiary": "#ffffff",
+                      "surface": "#fcf8ff",
+                      "background": "#fcf8ff",
+                      "primary": "#1a146b",
+                      "surface-variant": "#e5e1e9",
+                      "inverse-surface": "#303036",
+                      "inverse-on-surface": "#f3eff7",
+                      "on-background": "#1b1b21",
+                      "surface-tint": "#5654a8",
+                      "surface-container-lowest": "#ffffff",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "on-surface-variant": "#474651",
+                      "secondary-container": "#d6e0f1",
+                      "on-tertiary-fixed-variant": "#70380b",
+                      "inverse-primary": "#c3c0ff",
+                      "on-secondary-fixed-variant": "#3e4755",
+                      "on-error": "#ffffff",
+                      "primary-fixed": "#e2dfff",
+                      "primary-container": "#312e81",
+                      "surface-bright": "#fcf8ff",
+                      "tertiary-fixed-dim": "#ffb688",
+                      "on-primary-container": "#9c9af4",
+                      "on-primary": "#ffffff",
+                      "on-primary-fixed-variant": "#3e3c8f",
+                      "on-primary-fixed": "#100563",
+                      "secondary": "#555f6d",
+                      "on-tertiary-container": "#de915e",
+                      "on-error-container": "#93000a",
+                      "error-container": "#ffdad6",
+                      "on-secondary-container": "#596372",
+                      "tertiary-fixed": "#ffdbc7",
+                      "on-secondary": "#ffffff",
+                      "outline": "#777682",
+                      "tertiary": "#3e1a00"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "container-padding": "24px",
+                      "row-height-standard": "56px",
+                      "nav-width-expanded": "280px",
+                      "nav-width-collapsed": "64px",
+                      "row-height-dense": "40px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Rubik"
+                      ],
+                      "label-xs": [
+                              "Rubik"
+                      ],
+                      "headline-md": [
+                              "Rubik"
+                      ],
+                      "display-lg": [
+                              "Rubik"
+                      ],
+                      "title-sm": [
+                              "Rubik"
+                      ],
+                      "body-sm": [
+                              "Rubik"
+                      ],
+                      "code-sm": [
+                              "Courier Prime"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-xs": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "30px",
+                              {
+                                      "lineHeight": "38px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "title-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Rubik', sans-serif; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col antialiased">
+<!-- TopAppBar -->
+<header class="bg-surface border-b border-outline-variant flex flex-row-reverse justify-between items-center w-full px-container-padding h-row-height-standard docked full-width top-0 z-20">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary cursor-pointer hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">menu</span>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary">מאגר ידע ארגוני</h1>
+</div>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-primary cursor-pointer hover:bg-surface-container-high transition-colors p-2 rounded-full active:opacity-80 transition-opacity">search</span>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- Main Content Canvas (Empty State) -->
+<main class="flex-1 overflow-y-auto bg-background p-container-padding flex flex-col">
+<!-- Breadcrumbs -->
+<nav aria-label="Breadcrumb" class="flex items-center text-on-surface-variant font-body-sm text-body-sm mb-6">
+<ol class="inline-flex items-center space-x-1 space-x-reverse md:space-x-2 md:space-x-reverse">
+<li class="inline-flex items-center">
+<a class="inline-flex items-center hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-lg ml-1">home</span>
+                            ראשי
+                        </a>
+</li>
+<li>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-sm mx-1">chevron_left</span>
+<a class="hover:text-primary transition-colors" href="#">מחלקת הנדסה</a>
+</div>
+</li>
+<li aria-current="page">
+<div class="flex items-center">
+<span class="material-symbols-outlined text-sm mx-1">chevron_left</span>
+<span class="text-on-surface font-medium">פרויקט אלפא</span>
+</div>
+</li>
+</ol>
+</nav>
+<!-- Empty State Container -->
+<div class="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center">
+<!-- Illustration -->
+<div class="mb-8 relative w-64 h-64 flex items-center justify-center">
+<div class="absolute inset-0 bg-surface-container rounded-full opacity-50 blur-3xl"></div>
+<span class="material-symbols-outlined text-[120px] text-primary-fixed-dim" style="font-variation-settings: 'wght' 200;">folder_open</span>
+<!-- Decorative floating elements -->
+<span class="material-symbols-outlined absolute top-4 right-8 text-3xl text-secondary-fixed-dim animate-pulse" style="animation-delay: 0.2s;">description</span>
+<span class="material-symbols-outlined absolute bottom-12 left-4 text-4xl text-tertiary-fixed-dim animate-bounce" style="animation-duration: 3s;">cloud_upload</span>
+</div>
+<!-- Text Content -->
+<h2 class="font-display-lg text-display-lg text-on-surface mb-4">התיקייה ריקה</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-10 max-w-md">
+                    אין כאן מסמכים עדיין. אפשר להתחיל למלא את התיקייה על ידי העלאת קבצים חדשים או יצירת תת-תיקיות לארגון המידע.
+                </p>
+<!-- Actions -->
+<div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+<button class="flex items-center justify-center gap-2 bg-primary text-on-primary font-title-sm text-title-sm px-6 py-3 rounded-full hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm active:scale-95 duration-200 w-full sm:w-auto">
+<span class="material-symbols-outlined">upload_file</span>
+                        העלאת קבצים
+                    </button>
+<button class="flex items-center justify-center gap-2 bg-surface text-on-surface border border-outline font-title-sm text-title-sm px-6 py-3 rounded-full hover:bg-surface-container-low transition-colors active:scale-95 duration-200 w-full sm:w-auto">
+<span class="material-symbols-outlined">create_new_folder</span>
+                        יצירת תיקייה חדשה
+                    </button>
+</div>
+</div>
+</main>
+<!-- NavigationDrawer (Sidebar - Right side in RTL) -->
+<aside class="hidden md:flex bg-surface border-l border-outline-variant fixed right-0 top-0 h-full w-nav-width-expanded flex-col overflow-y-auto z-10 pt-row-height-standard">
+<!-- User Profile Header -->
+<div class="p-container-padding border-b border-surface-variant flex items-center justify-end gap-4">
+<div class="text-right">
+<h3 class="font-title-sm text-title-sm text-on-surface">ישראל ישראלי</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">מנהל ידע</p>
+<span class="inline-block mt-1 font-label-xs text-label-xs bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full">מחובר</span>
+</div>
+<div class="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-headline-md text-headline-md">
+                    יי
+                </div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 py-4 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer duration-200" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-body-md text-body-md">מסמכים</span>
+</a>
+<!-- Active Item: Shared Folders (as user is browsing a specific project folder) -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary-container text-on-secondary-container font-bold border-r-4 border-primary cursor-pointer transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">folder_shared</span>
+<span class="font-body-md text-body-md">תיקיות משותפות</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer duration-200" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-body-md text-body-md">ארכיון</span>
+</a>
+<div class="my-2 border-t border-surface-variant"></div>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-all cursor-pointer duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">הגדרות</span>
+</a>
+</nav>
+</aside>
+</div>
+</body></html>
