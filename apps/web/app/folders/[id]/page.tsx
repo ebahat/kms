@@ -13,7 +13,13 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** UI spec B2's folder-tree portion, one folder deep: breadcrumb, subfolders, read-only document list. Upload/version history/processing-queue (B3-B5) are out of scope for this plan. */
+/**
+ * UI spec B2's folder-tree portion, one folder deep: breadcrumb, subfolders, document list with a
+ * plain download link per document (calling the already-built DocumentsController download route).
+ * Upload with progress/version history/processing-queue (B3-B5) remain out of scope for this plan —
+ * the download link itself is a small, self-contained addition to the existing read-only list, not
+ * that deferred slice.
+ */
 export default function FolderDetailPage() {
   const params = useParams<{ id: string }>();
   const folderId = params.id;
@@ -29,6 +35,8 @@ export default function FolderDetailPage() {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [busy, setBusy] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setNotFound(false);
@@ -94,6 +102,27 @@ export default function FolderDetailPage() {
     }
   }
 
+  /**
+   * Pilot-only caveat (native OCI object storage binding): unlike the S3-compatible bindings,
+   * OciStorageProvider can't set a per-download filename — it forces a generic "attachment" name at
+   * the browser level (see storage-provider.ts's OciStorageProvider doc comment for why). Shown once
+   * per click, dismissed automatically, rather than baked into the download button's permanent label.
+   */
+  async function onDownload(documentId: string) {
+    setDownloadingId(documentId);
+    setError(null);
+    try {
+      const { url } = await foldersApi.documentDownloadUrl(documentId);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setDownloadNotice('בתקופת הפיילוט שם הקובץ שיורד יהיה גנרי — נא לשנות את שם הקובץ שהורדתם.');
+      setTimeout(() => setDownloadNotice(null), 8000);
+    } catch (e) {
+      setError(apiErrorMessage(e, 'ההורדה נכשלה'));
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   async function onDelete() {
     if (!window.confirm('למחוק את התיקייה? הפעולה אפשרית רק כשהתיקייה ריקה.')) return;
     setBusy(true);
@@ -146,6 +175,11 @@ export default function FolderDetailPage() {
       </h1>
 
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {downloadNotice && (
+        <p role="status" style={{ color: '#555', background: '#f3f3f3', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
+          {downloadNotice}
+        </p>
+      )}
 
       <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
         {canManage && (
@@ -212,6 +246,10 @@ export default function FolderDetailPage() {
           {documents.map((d) => (
             <li key={d.id}>
               {d.name} — {formatSize(d.sizeBytes)} — גרסה {d.latestVersionNumber} — {d.status}
+              {' '}
+              <button onClick={() => onDownload(d.id)} disabled={downloadingId === d.id}>
+                {downloadingId === d.id ? 'מוריד...' : 'הורדה'}
+              </button>
             </li>
           ))}
         </ul>
