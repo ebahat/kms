@@ -125,10 +125,21 @@ deferred. Their absence is the point, not an omission.
 
 ### Architecture (`arm64`)
 
-Ampere A1 is ARM. Verified compatible: `node:22-slim` and `gcr.io/distroless/nodejs22-debian12` are
-both multi-arch; `argon2` (the only native dependency, `libs/auth`) publishes arm64 prebuilds. **Not
-yet proven by a real arm64 build** — that is this ADR's first implementation task, and its one real
-technical risk.
+Ampere A1 is ARM. **Proven 2026-08-18**: `docker build --platform linux/arm64` of `apps/api/Dockerfile`
+succeeds, the resulting image reports `arm64/linux`, and a booted container starts Nest, loads
+`argon2`'s native binding, and actually hashes a password (`$argon2id$...`) — no exec-format error, no
+crash. `node:22-slim` and `gcr.io/distroless/nodejs22-debian12` are both multi-arch as expected;
+`argon2` (the only native dependency, `libs/auth`) loads its prebuilt arm64 binding correctly.
+
+Proving this surfaced a real, unrelated bug in `apps/api/Dockerfile`, fixed the same day: the final
+stage copied `apps/api/node_modules` and the workspace root `node_modules` into two renamed,
+side-by-side folders, which breaks pnpm's relative workspace symlinks (they climb up into a shared
+`.pnpm` store and into sibling `libs/*` packages by relative path). The fix preserves the build stage's
+exact directory layout in the final stage (`WORKDIR /repo/apps/api`, `COPY ... /repo/node_modules`,
+`COPY ... /repo/libs`) instead of flattening it, plus `ENV CI=true` (pnpm refuses to reinstall
+`node_modules` with no TTY, unrelated to arm64) and a missing root `.dockerignore` (the build context
+was shipping the full 5.6 GB working tree, including `.worktrees/`, on every build). All three bugs
+would have hit an amd64 build identically — arm64 itself was never the problem.
 
 ### Storage provider
 
@@ -167,11 +178,12 @@ not only portability grounds.
   portable to Hetzner or any VPS in one file, so Oracle cutting the free tier again is a config
   change, not an architecture change.
 - **Negative / accepted risks:** single point of failure with no automated recovery; self-hosted
-  Redis and Caddy are new ops surface; arm64 build unproven at time of writing; PRD §13's availability
-  targets are not met and must not be claimed until ADR-0014's topology is applied.
-- **Follow-ups:** prove the arm64 build; a `mongodump` backup script while on Atlas M0; revisit this
-  ADR the moment there is a paying customer or real document volume — the trigger to apply ADR-0014 is
-  *revenue or data*, not calendar time. (`S3StorageProvider` — **done 2026-08-17**, see above.)
+  Redis and Caddy are new ops surface; PRD §13's availability targets are not met and must not be
+  claimed until ADR-0014's topology is applied.
+- **Follow-ups:** a `mongodump` backup script while on Atlas M0; revisit this ADR the moment there is a
+  paying customer or real document volume — the trigger to apply ADR-0014 is *revenue or data*, not
+  calendar time. (`S3StorageProvider` — **done 2026-08-17**; arm64 build — **proven 2026-08-18**, see
+  above.)
 - **Exit cost, deliberately kept low.** With `S3StorageProvider` in place, migrating to AWS or Hetzner
   is: `rclone sync` the two buckets, copy 5 secret values, rewrite ~20 Terraform resources, redeploy
   the same `docker-compose.yml`. Atlas is external and needs no migration at all; Redis is ephemeral
