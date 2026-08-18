@@ -6,7 +6,11 @@
 **Sources:** [ADR-0014](0014-hosting-topology-oci.md) (retargeted, not superseded), ADR-0006 (storage/serving),
 ADR-0003 (worker pools — deferred), PRD §3 (EU residency), §13 (availability targets),
 `docs/deployment/oci-vs-gcp-cost-comparison-15-08-2026-research.md`,
-[Oracle Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
+[Oracle Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm),
+`docs/requirements_review_v01.md` (residency resolution log), live OCI API verification (2026-08-19),
+[Ampere A1 Compute pricing](https://www.oracle.com/cloud/compute/arm/),
+[OCI Key Management FAQ](https://www.oracle.com/security/cloud-security/key-management/faq/),
+[OCI Storage Pricing Guide](https://ocispecialists.com/blog/oci-storage-pricing-guide/)
 
 ## Status
 
@@ -167,6 +171,75 @@ accept `ResponseContentDisposition` at signing time, so the caller's display fil
 download, matching `GcsStorageProvider` and satisfying ADR-0006 properly rather than via the generic
 `attachment` fallback OCI PARs force. That makes S3 the *preferred* binding on capability grounds,
 not only portability grounds.
+
+### Correction (2026-08-19): region is `il-jerusalem-1`, not `eu-frankfurt-1`
+
+The first real `terraform apply` attempt (2026-08-18, against `eu-frankfurt-1`) surfaced two more real,
+previously-unverified bugs — same pattern as the arm64 packaging bugs above, fixed the same way (find
+by actually running it, not by inference):
+
+- **`oci_vault_secret` needs `secret_content` or `enable_auto_generation`** — the prior "UNVERIFIED,
+  flag for Task 8" note in `modules/vault/main.tf` had it right: OCI rejects an empty secret shell
+  (`400-CannotParseRequest, Provide valid secret content or enable auto-generation`). Fixed by seeding
+  a placeholder `secret_content` (`base64encode("placeholder-rotate-immediately-after-apply")`) with
+  `lifecycle { ignore_changes = [secret_content] }`, so an out-of-band rotation to the real value isn't
+  reverted by the next `apply`.
+- **Object Storage has no default access to Vault keys.** Bucket creation with a customer-managed
+  `kms_key_id` failed `404-NotAuthorizedOrFoundKmsKey` until an explicit IAM policy was added:
+  `allow service objectstorage-<region> to use keys in compartment id <compartment>` (note the
+  region-scoped service name — the bare `objectstorage` principal doesn't exist; OCI rejected it as
+  `400-InvalidParameter`). This is `oci_identity_policy.object_storage_kms_access` in
+  `modules/vault/main.tf` now, with an explicit `depends_on = [module.vault]` on the object_storage
+  module call so a fresh `apply` always sequences it correctly.
+
+Applying that policy is what surfaced the real finding: **`403-NotAllowed, Please go to your home
+region MTZ`** — IAM policies are tenancy-wide resources, manageable only from the tenancy's home
+region. A live query (`oci iam region-subscription list`) confirmed the actual home region is
+**`il-jerusalem-1`** (Jerusalem), not `eu-frankfurt-1` as this ADR assumed throughout. Oracle's own
+Always Free docs, quoted directly: **"Always Free resources must be created in the tenancy's home
+region... If you create Always Free-eligible resources outside your home region, you will incur
+standard charges."** Everything already applied in Frankfurt (VCN/subnet/NSG, a vault, 2 KMS keys, 5
+secrets, and a VM that had briefly existed) was therefore not actually Always-Free-covered — a repeat,
+smaller-scale version of ADR-0014's original free-tier mistake. **All of it was destroyed the same
+day** (`terraform destroy`, 17 resources, confirmed clean) before any material charge could accrue;
+pure networking resources (VCN/subnet/NSG/routes) are never billed in OCI regardless of region, so the
+real exposure was limited to a partial day of a 2 OCPU/12GB instance plus a `DEFAULT` vault.
+
+**Why `il-jerusalem-1` over staying in Frankfurt, or moving to Hetzner:**
+
+| Option | Monthly cost | Latency (all-Israel user base) | Notes |
+|---|---|---|---|
+| `il-jerusalem-1` (chosen) | **$0** — genuinely the home region | Best — real in-country DC | Verified live: `VM.Standard.A1.Flex` (`billing-type: LIMITED_FREE`), Oracle Linux 9 aarch64 image, Object Storage, and Vault (`kms.il-jerusalem-1.oraclecloud.com`, 200 OK) all confirmed reachable |
+| `eu-frankfurt-1` (previous) | ~$30 (compute ~$27.74 + boot volume ~$2.13 + storage ~$0.51; Vault/keys are free everywhere, not home-region-gated) | EU-DC latency to Israel | Only justification was PRD §3 EU residency |
+| Hetzner (`CAX21`/`CAX31`) | ~$9–18 (€7.99–€15.99 + €0.50 IPv4) | **Worst** — no Middle East DC; ~180–320ms round-trip from Germany/Finland/US | Still the documented cloud-exit path (`S3StorageProvider`), not a hosting choice |
+
+The residency requirement itself doesn't block this: the actual resolution log
+(`docs/requirements_review_v01.md`, 2026-07-07) says **"EU region acceptable... Israel region not
+required for MVP"** — a permission, not a prohibition. `eu-frankfurt-1` was inherited by default from
+ADR-0007's earlier GCP `europe-west` choice, never re-checked against the tenancy's actual home region
+once the project moved to OCI. Hosting in Israel for an Israeli-market product with an Israeli tenancy
+plausibly satisfies data-residency concerns more directly than routing through the EU, not less.
+
+**Decision:** `region` defaults to `il-jerusalem-1` in `variables.tf`; `deploy/docker-compose.yml`'s
+`OCI_REGION` default and `deploy/README.md`'s OCIR login example were updated to match.
+
+**Applied 2026-08-19.** All 21 resources live in `il-jerusalem-1`: `public_ip = 84.13.85.78`,
+`ssh_command = ssh opc@84.13.85.78`. `terraform plan` afterward: "No changes. Your infrastructure
+matches the configuration." Two more real bugs surfaced getting there, both fixed:
+
+- **The `oracle/oci` provider honors `~/.oci/config`'s `region=` line over the `provider "oci" {
+  region = var.region }` block's value**, for this auth method at least — setting `var.region` alone
+  wasn't enough; resources kept creating in `eu-frankfurt-1` (confirmed by their OCID prefixes) until
+  `~/.oci/config`'s own `region=` was also changed to `il-jerusalem-1`. Anyone re-running this apply
+  from a fresh machine needs to `oci setup config` (or hand-edit the config file) with the home region
+  before `terraform apply`, not just set `terraform.tfvars`.
+- **`oci_objectstorage_bucket`'s `retention_rules.duration.time_unit` only accepts `YEARS` or
+  `DAYS`** — `MONTHS` (the module's original value, "24mo") isn't a valid enum member, and OCI's error
+  for it is an unhelpful `400-InvalidJSON` rather than a clear "invalid enum" message, so this needed
+  an actual failed apply (twice — it silently rolled the bucket back out of Terraform state both times,
+  leaving a same-named orphan bucket on OCI's side that had to be found and deleted by hand before
+  retrying) to surface. Fixed as `time_amount = 2, time_unit = "YEARS"` — exactly equivalent to the
+  intended 24 months, sec §12 item 7 is unaffected.
 
 ### What is explicitly given up
 

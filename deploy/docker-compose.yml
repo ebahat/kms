@@ -43,7 +43,7 @@ services:
       KMS_MASTER_KEY_HEX: ${KMS_MASTER_KEY_HEX:?KMS_MASTER_KEY_HEX is required}
       OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
       OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
-      OCI_REGION: ${OCI_REGION:-eu-frankfurt-1}
+      OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
     depends_on: [redis-app, redis-queue]
     deploy:
       resources:

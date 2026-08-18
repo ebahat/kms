@@ -11,6 +11,7 @@ coverage/
 infra/**/.terraform/
 infra/**/*.tfstate
 infra/**/*.tfstate.backup
+infra/**/*.tfstate.*.backup
 infra/**/.terraform.lock.hcl
 infra/**/*.tfvars
 !infra/**/*.tfvars.example

@@ -29,11 +29,10 @@ docker buildx build --platform linux/arm64 \
 # repeat for portal-api, web
 ```
 
-Verified compatible: `node:22-slim` and `gcr.io/distroless/nodejs22-debian12` are both multi-arch;
-`argon2` (`libs/auth`, the only native dependency) publishes arm64 prebuilds. **This has not yet been
-proven by an actual arm64 build** — do that before relying on the deploy path.
+**Proven 2026-08-18**: all three images (`api`, `portal-api`, `web`) build and boot clean under
+`--platform linux/arm64`; `argon2`'s native binding was confirmed working end-to-end. See ADR-0015.
 
-OCIR login: `docker login eu-frankfurt-1.ocir.io -u '<namespace>/<username>' -p '<auth-token>'`
+OCIR login: `docker login il-jerusalem-1.ocir.io -u '<namespace>/<username>' -p '<auth-token>'`
 (auth token from Console → Identity → Users → your user → Auth Tokens).
 
 ## What is NOT deployed here, on purpose

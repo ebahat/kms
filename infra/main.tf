@@ -14,6 +14,8 @@ module "vault" {
   source         = "./modules/vault"
   compartment_id = var.compartment_id
   env            = var.env
+  region         = var.region
+  name_suffix    = var.vault_name_suffix
 }
 
 module "object_storage" {
@@ -22,6 +24,9 @@ module "object_storage" {
   namespace      = var.object_storage_namespace
   env            = var.env
   kms_key_id     = module.vault.storage_key_id
+  # Explicit, not just the kms_key_id reference: bucket creation needs the vault module's
+  # object_storage_kms_access IAM policy too, which nothing else here forces an ordering against.
+  depends_on = [module.vault]
 }
 
 module "compute" {
