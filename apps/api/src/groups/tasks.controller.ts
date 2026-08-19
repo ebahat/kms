@@ -1,11 +1,12 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { Module } from '@kms/contracts';
+import { Edition, Module } from '@kms/contracts';
 import { AuditEventsRepository, SCOPE_CLS_KEY, Scope, TASK_COLUMNS, TaskColumn, TasksRepository, toObjectId } from '@kms/data';
 import { GroupsMembershipService } from './groups-membership.service';
 import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 
 @Controller('groups/:groupId/tasks')
+@Edition('kb')
 @Module('kanban')
 export class TasksController {
   constructor(

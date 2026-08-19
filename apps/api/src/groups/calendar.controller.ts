@@ -1,10 +1,11 @@
 import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { Module } from '@kms/contracts';
+import { Edition, Module } from '@kms/contracts';
 import { EventsRepository, SCOPE_CLS_KEY, Scope, TasksRepository, toObjectId } from '@kms/data';
 import { GroupsMembershipService } from './groups-membership.service';
 
 @Controller('groups/:groupId/calendar')
+@Edition('kb')
 @Module('calendar')
 export class CalendarController {
   constructor(

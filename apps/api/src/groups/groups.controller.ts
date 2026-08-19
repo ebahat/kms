@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CreateGroupRequestSchema, UpdateGroupMembersRequestSchema } from '@kms/contracts';
+import { CreateGroupRequestSchema, Edition, UpdateGroupMembersRequestSchema } from '@kms/contracts';
 import {
   AuditEventsRepository,
   EventsRepository,
@@ -32,6 +32,7 @@ const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
  * near-identical filter, which the review that caught this gap rejected as needless duplication.
  */
 @Controller('groups')
+@Edition('kb')
 @UseFilters(FolderExceptionFilter)
 export class GroupsController {
   constructor(

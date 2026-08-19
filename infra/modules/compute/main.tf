@@ -60,10 +60,16 @@ resource "oci_core_instance" "app" {
     user_data = base64encode(<<-EOF
       #cloud-config
       package_update: true
-      packages:
-        - docker
-        - docker-compose-plugin
       runcmd:
+        # CONFIRMED 2026-08-19: Oracle Linux 9's default repos do NOT carry Docker at all — there is
+        # no "docker" or "docker-compose-plugin" package there (that's Ubuntu/Debian naming). The
+        # original `packages: [docker, docker-compose-plugin]` failed the whole cloud-init run
+        # (`No match for argument: docker-compose-plugin`, and since dnf installs a package list
+        # atomically, `docker` itself silently never installed either — `docker.service does not
+        # exist`). Docker's own CentOS repo is RHEL-compatible and works fine on OL9.
+        - dnf install -y dnf-plugins-core
+        - dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+        - dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
         - systemctl enable --now docker
         - usermod -aG docker opc
         # Oracle Linux ships a default-DENY iptables INPUT chain that silently blocks 80/443 even

@@ -274,3 +274,50 @@ matches the configuration." Two more real bugs surfaced getting there, both fixe
   `KMS_MASTER_KEY_HEX`, and switching to a cloud KMS with a **non-exportable** key would make every
   TOTP secret decryptable only inside that cloud — plan that re-encryption path *when* building
   `OciKeyProvider`, not after.
+
+### Deployed to the VM (2026-08-19) — first real production boot
+
+`deploy/docker-compose.yml` is running live on the VM: `api`, `portal-api`, `web`, `caddy`,
+`redis-app`, `redis-queue` all `Up`, `api`'s `/health` returns `200 {"status":"ok"}` through a real
+MongoDB Atlas M0 connection (EU region) and the Vault-sourced `PASSWORD_PEPPER`. Caddy's hostname
+routing confirmed working (HTTP→HTTPS 308 redirect on `Host: api.bahat.co.il`) — TLS itself is still
+pending real DNS.
+
+Three more real, previously-unverified bugs surfaced getting here, none of them infra-config issues:
+
+1. **`docker push` (this Mac's Docker Desktop client) is broken against `mtz.ocir.io`/
+   `il-jerusalem-1.ocir.io`.** Consistently `unknown: Unauthorized` on a blob `HEAD` request, on both
+   OCIR hostnames, with a freshly created and confirmed-`ACTIVE` auth token. Root-caused by manually
+   replicating what `docker login`/`push` does over raw HTTP: the unscoped *and* the properly-scoped
+   (`repository:.../kms-api:pull,push`) OAuth2 token exchanges both succeed cleanly (200, real JWT,
+   correct scope granted) — OCIR's auth layer is entirely correct. The bug is client-side, specific to
+   this Docker Desktop version's bearer-challenge handling against this registry. Worked around with
+   `crane` (`brew install crane`; `docker save` to a tar, `crane push` the tar) — pushed all three
+   images successfully. Plain `docker login`/`docker pull` on the VM's newer Docker CE (29.7.2) had no
+   such issue, so this only affects the local build/push leg, not the VM.
+2. **Oracle Linux 9 has no `docker`/`docker-compose-plugin` packages in its default repos at all** —
+   that's Debian/Ubuntu `apt` package naming, not what OL9's `dnf` repos carry. Because `dnf install
+   pkg1 pkg2` fails the whole transaction when any one package is missing, the original cloud-init's
+   `packages: [docker, docker-compose-plugin]` silently failed *both* packages
+   (`Unit file docker.service does not exist`) — cloud-init still reported `finished`, no obvious
+   signal anything was wrong short of `cloud-init status --long`. Fixed in
+   `modules/compute/main.tf` by adding Docker's own CentOS/RHEL-compatible repo
+   (`download.docker.com/linux/centos/docker-ce.repo`) before installing — works on OL9 aarch64
+   without modification. Applied by hand to the already-running VM (cloud-init only runs once at
+   first boot, so a `terraform apply` alone wouldn't have picked up the fix retroactively).
+3. **A real, previously-latent application bug**: `apps/api`'s `assertEditionCoverage` boot-time
+   guard (ADR-0009 G2) failed — `FoldersController`, `GroupsController`, `EventsController`,
+   `TasksController`, `CalendarController`, `NotificationPreferencesController` were all missing the
+   required `@Edition()`/`@EditionExempt()` decorator, added when each was originally built but never
+   actually caught because this specific assertion only runs at real app bootstrap, which no unit
+   test suite exercises (254/254 tests were already green, build/lint clean — none of that touches
+   this code path). This was the **first time the API has ever booted outside a test harness**. Fixed
+   by adding `@Edition('kb')` to all six (this project has one edition in active scope); verified
+   clean on a full local rebuild (`tsc --noEmit`, 254/254 unit tests) before rebuilding and
+   redeploying the image.
+
+None of these three are infra-topology issues — they're real gaps in things that had never actually
+been exercised end-to-end before, exactly the category of finding this ADR's implementation phase has
+repeatedly turned up (arm64 build, region, retention rules, and now this). Remaining before the stack
+is reachable at its real domain: DNS (`api.`/`admin.`/`app.bahat.co.il` → `84.13.85.78`, owner-side)
+so Caddy can obtain real Let's Encrypt certificates.

@@ -32,8 +32,9 @@ docker buildx build --platform linux/arm64 \
 **Proven 2026-08-18**: all three images (`api`, `portal-api`, `web`) build and boot clean under
 `--platform linux/arm64`; `argon2`'s native binding was confirmed working end-to-end. See ADR-0015.
 
-OCIR login: `docker login il-jerusalem-1.ocir.io -u '<namespace>/<username>' -p '<auth-token>'`
-(auth token from Console → Identity → Users → your user → Auth Tokens).
+OCIR login: `docker login mtz.ocir.io -u '<namespace>/<username>' -p '<auth-token>'` — OCIR hostnames
+use the region's short **key** (`mtz` for `il-jerusalem-1`), not the full region name; can also be
+generated via `oci iam auth-token create --description '...'` instead of the Console.
 
 ## What is NOT deployed here, on purpose
 

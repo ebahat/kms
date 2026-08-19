@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Patch } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
+import { Edition } from '@kms/contracts';
 import {
   NOTIFICATION_PREFERENCE_FIELDS,
   NotificationPreferenceField,
@@ -15,6 +16,7 @@ type PreferencePatch = Partial<Record<NotificationPreferenceField, PreferenceSco
 
 /** No `@Module` gate — core document notifications aren't an opt-in module (Phase 2A design). */
 @Controller('users/me/notification-preferences')
+@Edition('kb')
 export class NotificationPreferencesController {
   constructor(
     private readonly cls: ClsService,

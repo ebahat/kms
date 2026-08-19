@@ -17,6 +17,7 @@ import {
 import { ClsService } from 'nestjs-cls';
 import {
   CreateFolderRequestSchema,
+  Edition,
   FolderGrantRequestSchema,
   MoveFolderRequestSchema,
   RenameFolderRequestSchema,
@@ -70,6 +71,7 @@ interface FolderSummary {
  * existed and was already correct; this controller is wiring, not new logic.
  */
 @Controller('folders')
+@Edition('kb')
 @UseFilters(FolderExceptionFilter)
 export class FoldersController {
   constructor(
