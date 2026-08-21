@@ -40,6 +40,25 @@ test.describe('production smoke', () => {
   // Real network + real TLS + a real Argon2id verify on the server: slower than a local run.
   test.setTimeout(60_000);
 
+  /**
+   * MUST-NOT-MUTATE guard. A successful login redirects to `/login/totp`, and when the account
+   * isn't enrolled yet the URL carries `?enroll=1` — which makes that page fire
+   * `POST /auth/totp/enroll` automatically on mount. That endpoint is destructive: it generates a
+   * new TOTP secret, overwrites any existing one, flips `mfaEnabled` to true, and returns the QR +
+   * backup codes exactly once.
+   *
+   * The first version of this file did not block it, and running it against the real deployment
+   * silently enrolled the operator's own account with a secret that only ever existed inside a
+   * headless browser — locking them out of their own MFA (2026-08-21). A post-deploy smoke test
+   * runs against production by definition, so it must be strictly non-mutating.
+   *
+   * Aborting the request still lets every assertion below hold: the redirect, the session cookie,
+   * and credential acceptance all happen server-side before this endpoint is ever reached.
+   */
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/auth/totp/enroll', (route) => route.abort());
+  });
+
   test('login page is served over valid TLS with no console errors', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
