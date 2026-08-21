@@ -72,8 +72,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3010
-      NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
-      NEXT_PUBLIC_PORTAL_API_URL: https://admin.${DOMAIN}
+      # NEXT_PUBLIC_API_URL / NEXT_PUBLIC_PORTAL_API_URL are NOT read here — client-bundle code only
+      # sees NEXT_PUBLIC_* values baked in at `docker build` time (apps/web/Dockerfile's ARGs), not
+      # container runtime. Setting them in this `environment:` block does nothing; kept out
+      # deliberately so it's not mistaken for the thing that controls this.
     deploy:
       resources:
         limits:

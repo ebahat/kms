@@ -1,6 +1,16 @@
 FROM node:22-slim AS build
 WORKDIR /repo
 ENV CI=true
+# NEXT_PUBLIC_* vars are read by client-bundle code (lib/api.ts) and Next.js inlines them at
+# `next build` time via webpack DefinePlugin — NOT read at container runtime. Setting them only in
+# docker-compose.yml's `environment:` block (as originally done) has zero effect on the already-built
+# client JS; it silently falls back to the http://localhost:3000 default baked in at build time.
+# CONFIRMED 2026-08-21: this shipped a build where every browser login attempt silently went to the
+# user's own machine instead of the real API, surfacing as a generic "invalid email or password."
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_PORTAL_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_PORTAL_API_URL=$NEXT_PUBLIC_PORTAL_API_URL
 COPY . .
 RUN corepack enable && pnpm install --frozen-lockfile
 RUN pnpm turbo run build --filter=@kms/web...
