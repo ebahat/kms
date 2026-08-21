@@ -26,8 +26,26 @@ multi-arch, or build natively on the VM.
 # From the repo root, on a machine with buildx (Apple Silicon builds arm64 natively):
 docker buildx build --platform linux/arm64 \
   -f apps/api/Dockerfile -t $REGISTRY/kms-api:latest --push .
-# repeat for portal-api, web
+# repeat for portal-api
+
+# web needs two extra --build-arg flags — see the callout below, this is not optional.
+docker buildx build --platform linux/arm64 \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.<domain> \
+  --build-arg NEXT_PUBLIC_PORTAL_API_URL=https://admin.<domain> \
+  -f apps/web/Dockerfile -t $REGISTRY/kms-web:latest --push .
 ```
+
+**`web`'s two `--build-arg`s are required, not optional — CONFIRMED 2026-08-21 the hard way.**
+`NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_PORTAL_API_URL` are read by client-bundle code and Next.js only
+inlines `NEXT_PUBLIC_*` values at `next build` time (webpack `DefinePlugin`) — **never** at container
+runtime. Setting them in `docker-compose.yml`'s `environment:` block (an earlier version of this repo
+did exactly that) has zero effect on an already-built image: every browser request silently falls back
+to the `http://localhost:3000` default baked into the bundle, and every login attempt fails with a
+generic "invalid email or password" — with **zero matching activity in the API's logs**, since the
+request never left the user's own machine. If you ever see that pattern (auth fails client-side, API
+logs show nothing), check this first. Verify a rebuild actually picked up the real URLs before
+pushing: `docker run --rm $REGISTRY/kms-web:latest sh -c "grep -c localhost:3000 apps/web/.next/static/chunks/*.js"`
+should show all zeros.
 
 **Proven 2026-08-18**: all three images (`api`, `portal-api`, `web`) build and boot clean under
 `--platform linux/arm64`; `argon2`'s native binding was confirmed working end-to-end. See ADR-0015.
@@ -35,6 +53,14 @@ docker buildx build --platform linux/arm64 \
 OCIR login: `docker login mtz.ocir.io -u '<namespace>/<username>' -p '<auth-token>'` — OCIR hostnames
 use the region's short **key** (`mtz` for `il-jerusalem-1`), not the full region name; can also be
 generated via `oci iam auth-token create --description '...'` instead of the Console.
+
+**If `docker push` fails with `unknown: Unauthorized` on a blob `HEAD` request** (confirmed
+2026-08-19, against `il-jerusalem-1`'s OCIR specifically, on Docker Desktop for Mac) — this was a
+client-side bug, not a credentials/permissions problem (verified via raw HTTP: OCIR's OAuth2
+token-exchange, both unscoped and repo-scoped, both succeeded cleanly). Work around with `crane`
+(`brew install crane`): `docker save $REGISTRY/kms-web:latest -o image.tar && crane push image.tar
+$REGISTRY/kms-web:latest`. Plain `docker pull` on the VM's own (newer) Docker CE had no such issue —
+this only affects the local build/push leg.
 
 ## What is NOT deployed here, on purpose
 
