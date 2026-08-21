@@ -42,8 +42,30 @@ admin.{$DOMAIN} {
 	reverse_proxy web:3010
 }
 
-# Tenant-facing UI
+# Tenant-facing UI + tenant API under the SAME origin.
+#
+# CONFIRMED BROKEN 2026-08-21 and fixed here: serving the UI on app.<domain> while the browser called
+# the API on api.<domain> is cross-origin, which breaks tenant login two independent ways —
+#   1. no CORS headers exist anywhere in apps/api, so the browser's preflight
+#      (`OPTIONS /auth/login`) 404s and the real POST is never sent at all; and
+#   2. the session cookie is `__Host-kms_sess` (ADR-0004 / sec §2), and the __Host- prefix pins a
+#      cookie to the exact host that set it — a cookie set by api.<domain> can NEVER be sent by a
+#      page on app.<domain>, no matter what CORS allows.
+# Routing the API under this same hostname fixes both without weakening either: no CORS is needed
+# because it isn't cross-origin, and __Host- keeps its full strength. `handle_path` strips the /api
+# prefix, so apps/api still sees its own unprefixed routes (/auth/login, /folders, ...).
+#
+# The admin realm already worked precisely because it was accidentally same-origin (admin.<domain>
+# serving both the admin UI and, via the @api matcher below, portal-api) — this makes the tenant
+# realm match that shape deliberately.
 app.{$DOMAIN} {
 	import security_headers
-	reverse_proxy web:3010
+
+	handle_path /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		reverse_proxy web:3010
+	}
 }
