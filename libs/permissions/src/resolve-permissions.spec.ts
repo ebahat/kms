@@ -1,5 +1,10 @@
 import { computeFolderWidening, resolveFolderPermissions } from './resolve-permissions';
-import { FolderInput } from './types';
+import { DecidingGrant, FolderInput } from './types';
+
+/** `cappedFrom` only exists on the named-principal branch of the DecidingGrant union — this narrows past the `via: 'public'` branch for the group-role-cap assertions below. */
+function cappedFrom(grant: DecidingGrant | undefined): string | undefined {
+  return grant && grant.via !== 'public' ? grant.cappedFrom : undefined;
+}
 
 function folder(id: string, parentId: string | null, overrides: Partial<FolderInput> = {}): FolderInput {
   return {
@@ -16,7 +21,7 @@ describe('resolveFolderPermissions (ADR-0005)', () => {
   const userId = 'user-1';
   const groupId = 'group-1';
   const otherUserId = 'user-2';
-  const principals = { userId, groupIds: [groupId] };
+  const principals = { userId, groups: [{ groupId, role: 'manager' as const }] };
 
   it('grants no access to a folder with no grants and not public', () => {
     const result = resolveFolderPermissions([folder('f1', null)], principals);
@@ -48,6 +53,106 @@ describe('resolveFolderPermissions (ADR-0005)', () => {
     );
     expect(result.permittedEdit).toEqual(['f1']);
     expect(result.decidingGrant.get('f1')).toEqual({ tier: 'edit', via: { principalType: 'group', principalId: groupId } });
+  });
+
+  describe('group member role caps (2026-08-24 per-group-role plan)', () => {
+    it('group granted manage, member is viewer -> effective read', () => {
+      const p = { userId, groups: [{ groupId, role: 'viewer' as const }] };
+      const result = resolveFolderPermissions(
+        [folder('f1', null, { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'manage' }] })],
+        p,
+      );
+      expect(result.decidingGrant.get('f1')).toEqual({
+        tier: 'read',
+        via: { principalType: 'group', principalId: groupId },
+        cappedFrom: 'manage',
+      });
+      expect(result.permittedRead).toEqual(['f1']);
+      expect(result.permittedEdit).toEqual([]);
+    });
+
+    it('group granted manage, member is editor -> effective edit', () => {
+      const p = { userId, groups: [{ groupId, role: 'editor' as const }] };
+      const result = resolveFolderPermissions(
+        [folder('f1', null, { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'manage' }] })],
+        p,
+      );
+      expect(result.decidingGrant.get('f1')?.tier).toBe('edit');
+      expect(result.permittedEdit).toEqual(['f1']);
+      expect(result.permittedManage).toEqual([]);
+    });
+
+    it('group granted manage, member is manager -> effective manage', () => {
+      const p = { userId, groups: [{ groupId, role: 'manager' as const }] };
+      const result = resolveFolderPermissions(
+        [folder('f1', null, { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'manage' }] })],
+        p,
+      );
+      expect(result.permittedManage).toEqual(['f1']);
+      expect(cappedFrom(result.decidingGrant.get("f1"))).toBeUndefined();
+    });
+
+    it('a role cap never widens: group granted only read, member is manager -> still read', () => {
+      const p = { userId, groups: [{ groupId, role: 'manager' as const }] };
+      const result = resolveFolderPermissions(
+        [folder('f1', null, { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'read' }] })],
+        p,
+      );
+      expect(result.permittedRead).toEqual(['f1']);
+      expect(result.permittedEdit).toEqual([]);
+      expect(cappedFrom(result.decidingGrant.get("f1"))).toBeUndefined();
+    });
+
+    it('union of two capped group grants takes the max of the capped tiers, not the raw grant tiers', () => {
+      const groupB = 'group-b';
+      const p = {
+        userId,
+        groups: [
+          { groupId, role: 'viewer' as const }, // grant below is 'read' -> capped tier 'read'
+          { groupId: groupB, role: 'editor' as const }, // grant below is 'edit' -> capped tier 'edit'
+        ],
+      };
+      const result = resolveFolderPermissions(
+        [
+          folder('f1', null, {
+            hasExplicitGrants: true,
+            grants: [
+              { principalType: 'group', principalId: groupId, access: 'read' },
+              { principalType: 'group', principalId: groupB, access: 'edit' },
+            ],
+          }),
+        ],
+        p,
+      );
+      expect(result.permittedEdit).toEqual(['f1']);
+      expect(result.permittedManage).toEqual([]);
+    });
+
+    it('fails closed (not open to manage) on a grant with a malformed/out-of-enum access value — security review finding, 2026-08-24', () => {
+      const p = { userId, groups: [] };
+      const result = resolveFolderPermissions(
+        [
+          folder('f1', null, {
+            hasExplicitGrants: true,
+            grants: [{ principalType: 'user', principalId: userId, access: 'not-a-real-tier' as unknown as 'read' }],
+          }),
+        ],
+        p,
+      );
+      expect(result.permittedRead).toEqual([]);
+      expect(result.permittedManage).toEqual([]);
+      expect(result.decidingGrant.has('f1')).toBe(false);
+    });
+
+    it('direct per-user grants are never capped by any group role the same user holds elsewhere', () => {
+      const p = { userId, groups: [{ groupId, role: 'viewer' as const }] };
+      const result = resolveFolderPermissions(
+        [folder('f1', null, { hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'manage' }] })],
+        p,
+      );
+      expect(result.permittedManage).toEqual(['f1']);
+      expect(cappedFrom(result.decidingGrant.get("f1"))).toBeUndefined();
+    });
   });
 
   it('a grant naming a different user does not apply', () => {

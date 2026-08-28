@@ -10,6 +10,7 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UnsupportedMediaTypeException,
@@ -27,16 +28,20 @@ import {
   DownloadDocumentResponse,
   Edition,
   PurgeRecycleBinEntryResponse,
+  RecycleBinEntrySummary,
   RestoreDocumentResponse,
+  UpdateDocumentRequestSchema,
   UploadDocumentFormSchema,
   UploadDocumentResponse,
 } from '@kms/contracts';
 import {
   AuditEventsRepository,
+  ChunksRepository,
   DeletionVerificationsRepository,
   DocumentDocument,
   DocumentsRepository,
   DocumentVersionsRepository,
+  FoldersRepository,
   RecycleBinEntriesRepository,
   DEFAULT_RECYCLE_BIN_RETENTION_DAYS,
   TenantsRepository,
@@ -50,8 +55,7 @@ import { NotificationDispatchService } from '../notifications/notification-dispa
 import { DocumentsPermissionsService } from './documents-permissions.service';
 import { MulterExceptionFilter } from './multer-exception.filter';
 import { MAX_UPLOAD_BYTES } from './upload-limits';
-import { MIME_TYPES, sniffFileType } from './storage/magic-byte-sniff';
-import { buildVersionObjectKey } from './storage/storage-provider';
+import { MIME_TYPES, sniffFileType, buildVersionObjectKey } from '@kms/storage';
 import { purgeEntryObjects } from './recycle-bin-purge';
 import { STORAGE_PROVIDER, INGESTION_QUEUE, StorageProvider, IngestionQueue } from './documents.providers';
 
@@ -74,11 +78,13 @@ export class DocumentsController {
     private readonly cls: ClsService,
     private readonly documents: DocumentsRepository,
     private readonly documentVersions: DocumentVersionsRepository,
+    private readonly chunks: ChunksRepository,
     private readonly tenants: TenantsRepository,
     private readonly permissions: DocumentsPermissionsService,
     private readonly auditEvents: AuditEventsRepository,
     private readonly recycleBinEntries: RecycleBinEntriesRepository,
     private readonly deletionVerifications: DeletionVerificationsRepository,
+    private readonly folders: FoldersRepository,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(INGESTION_QUEUE) private readonly ingestionQueue: IngestionQueue,
     private readonly notifications: NotificationDispatchService,
@@ -112,6 +118,9 @@ export class DocumentsController {
       targetId: documentId,
       metadata: { versionId: version._id.toString(), versionNumber: version.versionNumber },
     });
+    // Best-effort "last opened" signal — no in-app preview exists, so a download-link issuance is
+    // the closest thing to "viewing" this app has. Never blocks or fails the actual download.
+    await this.documents.touchLastOpened(documentId);
 
     return signed;
   }
@@ -157,6 +166,8 @@ export class DocumentsController {
 
     await Promise.all(versions.map((v) => this.documentVersions.deleteOne({ _id: v._id })));
     await this.documents.deleteOne({ _id: documentId });
+    // Deleted documents must not remain retrievable via chat — purge their index rows too (no-op until Phase 3/4 ever writes any).
+    await this.chunks.deleteManyByDocument(documentId);
 
     await this.auditEvents.record({
       action: 'document.delete',
@@ -166,6 +177,51 @@ export class DocumentsController {
     await this.notifications.notifyFileDeleted(existing);
 
     return { recycleBinEntryId: entry._id.toString() };
+  }
+
+  /**
+   * Rename and/or move (document-file-actions plan, 2026-08-28). Both are edit-tier actions —
+   * matching upload's own gate (`canUploadTo`), not the manage-tier `delete()` requires above. A
+   * move additionally needs edit tier on the *destination* folder (mirrors
+   * FoldersController.move's "you must be able to add content where you're putting it" rule) and
+   * the destination must actually exist. Unlike a folder move, this never bumps permVersion — a
+   * document's own visibility is entirely a function of whichever folder currently holds it,
+   * resolved fresh on every read, not cached per-document.
+   */
+  @Patch('documents/:id')
+  @HttpCode(200)
+  async update(@Param('id') id: string, @Body() body: unknown): Promise<DocumentSummary> {
+    const patch = UpdateDocumentRequestSchema.parse(body);
+    if (Object.keys(patch).length === 0) throw new BadRequestException('at least one field must be provided');
+
+    const documentId = toObjectId(id);
+    const existing = await this.documents.findById(documentId);
+    if (!existing) throw new NotFoundException();
+
+    const canEditSource = await this.permissions.canUploadTo(existing.folderId.toString());
+    if (!canEditSource) throw new NotFoundException();
+
+    if (patch.name !== undefined) {
+      await this.documents.renameDocument(documentId, patch.name);
+      await this.auditEvents.record({ action: 'document.renamed', targetId: documentId, metadata: { name: patch.name } });
+    }
+
+    if (patch.folderId !== undefined) {
+      const destinationFolderId = toObjectId(patch.folderId);
+      const destination = await this.folders.findById(destinationFolderId);
+      if (!destination) throw new NotFoundException();
+
+      const canEditDestination = await this.permissions.canUploadTo(patch.folderId);
+      if (!canEditDestination) throw new NotFoundException();
+
+      await this.documents.moveDocument(documentId, destinationFolderId);
+      // Keeps chunks' denormalized folderId in sync — retrieval scoping filters on it directly (no-op until Phase 3/4 ever writes any).
+      await this.chunks.updateFolderId(documentId, destinationFolderId);
+      await this.auditEvents.record({ action: 'document.moved', targetId: documentId, metadata: { folderId: patch.folderId } });
+    }
+
+    const updated = await this.documents.findById(documentId);
+    return this.toDocumentSummary(updated!);
   }
 
   /**
@@ -200,7 +256,36 @@ export class DocumentsController {
       sizeBytes: latestVersion?.sizeBytes ?? 0,
       createdBy: doc.createdBy.toString(),
       createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+      lastOpenedAt: doc.lastOpenedAt,
     };
+  }
+
+  /**
+   * UI spec C4 — pending entries only (RecycleBinEntriesRepository.findPending(), anticipated
+   * for exactly this screen when it was built). Admin-only, same reasoning as restore/purge
+   * below: a regular user's own deletions aren't independently browsable outside their folder's
+   * permission set, so this stays a management-tier view, not a personal one.
+   */
+  @Get('recycle-bin')
+  @UseGuards(AdminOnlyGuard)
+  async listRecycleBin(): Promise<RecycleBinEntrySummary[]> {
+    const entries = await this.recycleBinEntries.findPending();
+    return Promise.all(
+      entries.map(async (entry) => {
+        const folder = await this.folders.findById(entry.folderId);
+        return {
+          id: entry._id.toString(),
+          documentId: entry.documentId.toString(),
+          name: entry.name,
+          folderId: entry.folderId.toString(),
+          folderName: folder?.name ?? null,
+          sizeBytes: entry.versions.reduce((max, v) => Math.max(max, v.sizeBytes), 0),
+          deletedAt: entry.deletedAt!, // always populated by Mongoose's `timestamps` on read
+          purgeAfter: entry.purgeAfter,
+        };
+      }),
+    );
   }
 
   /** Recycle-bin operations are admin-only (PRD §7: "tenant admins can restore from or purge the recycle bin early"). */

@@ -42,7 +42,7 @@ describe('NotificationDispatchService', () => {
       const memberA = newObjectId();
       const memberB = newObjectId();
       const groupId = newObjectId();
-      groups.findById.mockResolvedValue({ _id: groupId, memberUserIds: [creatorId, memberA, memberB] });
+      groups.findById.mockResolvedValue({ _id: groupId, members: [creatorId, memberA, memberB].map((userId) => ({ userId, role: 'editor' })) });
 
       const event = {
         _id: newObjectId(),
@@ -207,7 +207,7 @@ describe('NotificationDispatchService', () => {
 
     it('emails every "all" group member except the actor', async () => {
       const allMember = newObjectId();
-      groups.findById.mockResolvedValue({ _id: groupId, memberUserIds: [allMember, actorUserId] });
+      groups.findById.mockResolvedValue({ _id: groupId, members: [allMember, actorUserId].map((userId) => ({ userId, role: 'editor' })) });
       preferences.findAllWithPreference.mockResolvedValue([{ userId: allMember, taskStatusChanged: 'all' }]);
 
       await service.notifyTaskStatusChanged(task);
@@ -216,7 +216,7 @@ describe('NotificationDispatchService', () => {
     });
 
     it('never emails the actor', async () => {
-      groups.findById.mockResolvedValue({ _id: groupId, memberUserIds: [actorUserId] });
+      groups.findById.mockResolvedValue({ _id: groupId, members: [{ userId: actorUserId, role: 'editor' }] });
       preferences.findAllWithPreference.mockResolvedValue([{ userId: actorUserId, taskAdded: 'all' }]);
 
       await service.notifyTaskAdded(task);

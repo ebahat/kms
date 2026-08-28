@@ -1,5 +1,5 @@
 import { FolderDocument, GroupDocument } from '@kms/data';
-import { FolderInput, PrincipalSet } from './types';
+import { FolderInput, GroupMemberRole, PrincipalSet } from './types';
 
 /** FolderDocument (mongoose, ObjectId ids) -> FolderInput (plain strings) — the only place this package touches @kms/data shapes. */
 export function toFolderInput(doc: FolderDocument): FolderInput {
@@ -20,7 +20,18 @@ export function toFolderInputs(docs: FolderDocument[]): FolderInput[] {
   return docs.map(toFolderInput);
 }
 
-/** The querying user + every group they belong to (GroupsRepository.findForMember), as the resolver's principal set. */
+/**
+ * The querying user + their role in every group they belong to (GroupsRepository.findForMember),
+ * as the resolver's principal set. `memberGroups` is already filtered to this user's memberships,
+ * but each group's `members` array still lists everyone — pull out just this user's own role
+ * (2026-08-24 per-group-role plan). A group is dropped if the membership row is somehow absent
+ * (defensive only — findForMember's query guarantees a match) rather than crashing the resolver.
+ */
 export function toPrincipalSet(userId: string, memberGroups: GroupDocument[]): PrincipalSet {
-  return { userId, groupIds: memberGroups.map((group) => group._id.toString()) };
+  const groups: { groupId: string; role: GroupMemberRole }[] = [];
+  for (const group of memberGroups) {
+    const membership = group.members.find((m) => m.userId.toString() === userId);
+    if (membership) groups.push({ groupId: group._id.toString(), role: membership.role });
+  }
+  return { userId, groups };
 }

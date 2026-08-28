@@ -1,0 +1,25 @@
+{
+  "name": "@kms/storage",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test:unit": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1111.0",
+    "@aws-sdk/s3-request-presigner": "^3.1111.0",
+    "@google-cloud/storage": "^7.14.0",
+    "oci-common": "^2.139.1",
+    "oci-objectstorage": "^2.139.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0"
+  }
+}

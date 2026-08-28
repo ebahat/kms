@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { newObjectId } from '@kms/data';
+import { newObjectId, TenantsRepository } from '@kms/data';
 import { buildTestApp, closeTestApp, TestAppContext } from './support/test-app';
 import { seedFolder, seedGroup, mintSessionCookie } from './support/fixtures';
 
@@ -131,5 +131,224 @@ describe('Folder permission matrix (integration)', () => {
   it('401s an unauthenticated request', async () => {
     const folder = await seedFolder(ctx.app, { tenantId: newObjectId(), isPublic: true });
     await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).expect(401);
+  });
+
+  /**
+   * User-management plan (2026-08-24): a group's grant on a folder is a ceiling; the member's own
+   * viewer/editor/manager role narrows it. These prove the cap end to end through the real guard
+   * chain (SessionAuthGuard -> requireTier -> resolveFolderPermissions), not just the pure resolver
+   * function unit tests already cover — this is what actually stops a viewer from mutating content
+   * even though their group has full access.
+   */
+  describe('group member role caps (viewer/editor/manager)', () => {
+    it('a viewer-role member can read the folder but cannot create a subfolder in it (edit-gated) or manage it (grants)', async () => {
+      const tenantId = newObjectId();
+      const viewerId = newObjectId();
+      const group = await seedGroup(ctx.app, { tenantId, members: [{ userId: viewerId, role: 'viewer' }], name: 'Viewers' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [{ principalType: 'group', principalId: group._id, access: 'manage' }],
+      });
+      const cookie = await mintSessionCookie(ctx.app, { userId: viewerId, tenantId });
+
+      const detail = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.tier).toBe('read');
+
+      await request(ctx.app.getHttpServer())
+        .post('/folders')
+        .set('Cookie', cookie)
+        .send({ name: 'Subfolder', parentId: folder._id.toString() })
+        .expect(404);
+
+      await request(ctx.app.getHttpServer())
+        .post(`/folders/${folder._id.toString()}/grants`)
+        .set('Cookie', cookie)
+        .send({ principalType: 'user', principalId: viewerId.toString(), access: 'read' })
+        .expect(404);
+    });
+
+    it('an editor-role member can create content but cannot manage grants', async () => {
+      const tenantId = newObjectId();
+      const editorId = newObjectId();
+      const group = await seedGroup(ctx.app, { tenantId, members: [{ userId: editorId, role: 'editor' }], name: 'Editors' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [{ principalType: 'group', principalId: group._id, access: 'manage' }],
+      });
+      const cookie = await mintSessionCookie(ctx.app, { userId: editorId, tenantId });
+
+      const detail = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.tier).toBe('edit');
+
+      await request(ctx.app.getHttpServer())
+        .post('/folders')
+        .set('Cookie', cookie)
+        .send({ name: 'Subfolder', parentId: folder._id.toString() })
+        .expect(201);
+
+      await request(ctx.app.getHttpServer())
+        .post(`/folders/${folder._id.toString()}/grants`)
+        .set('Cookie', cookie)
+        .send({ principalType: 'user', principalId: editorId.toString(), access: 'read' })
+        .expect(404);
+    });
+
+    it('a manager-role member can manage grants — the full tier the group itself was granted', async () => {
+      const tenantId = newObjectId();
+      const managerId = newObjectId();
+      const group = await seedGroup(ctx.app, { tenantId, members: [{ userId: managerId, role: 'manager' }], name: 'Managers' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [{ principalType: 'group', principalId: group._id, access: 'manage' }],
+      });
+      const cookie = await mintSessionCookie(ctx.app, { userId: managerId, tenantId });
+
+      const detail = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.tier).toBe('manage');
+
+      await request(ctx.app.getHttpServer())
+        .post(`/folders/${folder._id.toString()}/grants`)
+        .set('Cookie', cookie)
+        .send({ principalType: 'user', principalId: managerId.toString(), access: 'read' })
+        .expect(201);
+    });
+
+    it('a role cap never widens: a viewer-role member of a group granted only read stays at read (not upgraded by anything)', async () => {
+      const tenantId = newObjectId();
+      const viewerId = newObjectId();
+      const group = await seedGroup(ctx.app, { tenantId, members: [{ userId: viewerId, role: 'viewer' }], name: 'ReadOnly' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [{ principalType: 'group', principalId: group._id, access: 'read' }],
+      });
+      const cookie = await mintSessionCookie(ctx.app, { userId: viewerId, tenantId });
+
+      const detail = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', cookie).expect(200);
+      expect(detail.body.tier).toBe('read');
+    });
+
+    it('promoting a member from viewer to manager through the real API invalidates the cached (lower) resolution', async () => {
+      const tenantId = newObjectId();
+      const memberId = newObjectId();
+      const adminId = newObjectId();
+      const group = await seedGroup(ctx.app, { tenantId, members: [{ userId: memberId, role: 'viewer' }], name: 'Promotable' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [{ principalType: 'group', principalId: group._id, access: 'manage' }],
+      });
+      const memberCookie = await mintSessionCookie(ctx.app, { userId: memberId, tenantId });
+      const adminCookie = await mintSessionCookie(ctx.app, { userId: adminId, tenantId, role: 'admin' });
+
+      // Populates a cached resolution at the viewer's capped-to-read tier.
+      const before = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', memberCookie).expect(200);
+      expect(before.body.tier).toBe('read');
+
+      await request(ctx.app.getHttpServer())
+        .patch(`/groups/${group._id.toString()}/members`)
+        .set('Cookie', adminCookie)
+        .send({ add: [{ userId: memberId.toString(), role: 'manager' }] })
+        .expect(200);
+
+      // The stale cached "read" resolution must not be served after the role change.
+      const after = await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', memberCookie).expect(200);
+      expect(after.body.tier).toBe('manage');
+    });
+
+    it('cross-tenant: a member of a same-named group in tenant B gets nothing in tenant A', async () => {
+      const tenantA = newObjectId();
+      const tenantB = newObjectId();
+      const userId = newObjectId();
+      const groupA = await seedGroup(ctx.app, { tenantId: tenantA, members: [], name: 'Same Name' });
+      await seedGroup(ctx.app, { tenantId: tenantB, members: [{ userId, role: 'manager' }], name: 'Same Name' });
+      const folder = await seedFolder(ctx.app, {
+        tenantId: tenantA,
+        grants: [{ principalType: 'group', principalId: groupA._id, access: 'manage' }],
+      });
+      const cookie = await mintSessionCookie(ctx.app, { userId, tenantId: tenantA });
+
+      // This user is a manager of tenant B's "Same Name" group, not tenant A's — tenant A's folder
+      // must be invisible to them regardless of the coincidental group name.
+      await request(ctx.app.getHttpServer()).get(`/folders/${folder._id.toString()}`).set('Cookie', cookie).expect(404);
+    });
+  });
+
+  /**
+   * A minimal, real, valid PNG (1x1, magic-byte-sniffable) — real end-to-end coverage needs a real
+   * upload to rename/move against, not a mocked file object like the unit specs use.
+   */
+  const TINY_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+    'base64',
+  );
+
+  describe('document rename/move — group role caps (document-file-actions plan, 2026-08-28)', () => {
+    it('an editor-role member can rename and move a document; a viewer-role member gets 404 on both', async () => {
+      const tenantId = newObjectId();
+      // Upload checks the tenant's real storage quota (assertWithinQuota) — seedFolder/seedGroup
+      // never create a Tenant document, so a real one is needed here specifically (every other
+      // test in this file only reads folders/groups, never uploads).
+      await ctx.app.get(TenantsRepository).create({
+        _id: tenantId,
+        name: 'Upload Test Tenant',
+        edition: 'kb',
+        storageQuotaBytes: 1024 * 1024 * 1024,
+        featureToggles: [],
+      } as any);
+      const editorId = newObjectId();
+      const viewerId = newObjectId();
+      const editorGroup = await seedGroup(ctx.app, { tenantId, members: [{ userId: editorId, role: 'editor' }], name: 'Editors' });
+      const viewerGroup = await seedGroup(ctx.app, { tenantId, members: [{ userId: viewerId, role: 'viewer' }], name: 'Viewers' });
+      const sourceFolder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [
+          { principalType: 'group', principalId: editorGroup._id, access: 'manage' },
+          { principalType: 'group', principalId: viewerGroup._id, access: 'manage' },
+        ],
+      });
+      const destinationFolder = await seedFolder(ctx.app, {
+        tenantId,
+        grants: [
+          { principalType: 'group', principalId: editorGroup._id, access: 'manage' },
+          { principalType: 'group', principalId: viewerGroup._id, access: 'manage' },
+        ],
+      });
+      const editorCookie = await mintSessionCookie(ctx.app, { userId: editorId, tenantId });
+      const viewerCookie = await mintSessionCookie(ctx.app, { userId: viewerId, tenantId });
+
+      const uploadRes = await request(ctx.app.getHttpServer())
+        .post('/documents')
+        .set('Cookie', editorCookie)
+        .field('folderId', sourceFolder._id.toString())
+        .attach('file', TINY_PNG, 'test.png')
+        .expect(201);
+      const documentId = uploadRes.body.documentId;
+
+      // Viewer-role: 404 on both rename and move, despite the group having 'manage' on both folders.
+      await request(ctx.app.getHttpServer())
+        .patch(`/documents/${documentId}`)
+        .set('Cookie', viewerCookie)
+        .send({ name: 'renamed-by-viewer.png' })
+        .expect(404);
+      await request(ctx.app.getHttpServer())
+        .patch(`/documents/${documentId}`)
+        .set('Cookie', viewerCookie)
+        .send({ folderId: destinationFolder._id.toString() })
+        .expect(404);
+
+      // Editor-role: both succeed.
+      const renameRes = await request(ctx.app.getHttpServer())
+        .patch(`/documents/${documentId}`)
+        .set('Cookie', editorCookie)
+        .send({ name: 'renamed.png' })
+        .expect(200);
+      expect(renameRes.body.name).toBe('renamed.png');
+
+      const moveRes = await request(ctx.app.getHttpServer())
+        .patch(`/documents/${documentId}`)
+        .set('Cookie', editorCookie)
+        .send({ folderId: destinationFolder._id.toString() })
+        .expect(200);
+      expect(moveRes.body.folderId).toBe(destinationFolder._id.toString());
+    });
   });
 });

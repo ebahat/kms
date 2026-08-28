@@ -30,18 +30,27 @@ export default function TosAcceptPage() {
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <h1>תנאי שימוש ומדיניות פרטיות</h1>
-        {error && <div className="auth-error">{error}</div>}
-        <p>עליך לאשר את תנאי השימוש ומדיניות הפרטיות המעודכנים כדי להמשיך.</p>
-        <div className="auth-field">
-          <label>
-            <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> קראתי ואני מסכים/ה
-            לתנאים
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+      <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-8">
+        <h1 className="font-headline-md text-headline-md text-on-surface mb-6">תנאי שימוש ומדיניות פרטיות</h1>
+        {error && <div className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</div>}
+        <p className="font-body-md text-body-md text-on-surface mb-4">עליך לאשר את תנאי השימוש ומדיניות הפרטיות המעודכנים כדי להמשיך.</p>
+        <div className="mb-4">
+          <label className="flex items-center gap-2 font-body-sm text-body-sm text-on-surface">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary"
+            />
+            קראתי ואני מסכים/ה לתנאים
           </label>
         </div>
-        <button className="auth-submit" disabled={!accepted || submitting} onClick={onAccept}>
+        <button
+          disabled={!accepted || submitting}
+          onClick={onAccept}
+          className="w-full py-2.5 rounded-DEFAULT bg-primary text-on-primary font-title-sm text-title-sm hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
           {submitting ? '...' : 'אישור והמשך'}
         </button>
       </div>

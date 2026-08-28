@@ -1,0 +1,1 @@
+Step-Up Authentication (Critical for SOC 2): Even if the user has an active, trusted session, you should trigger an immediate MFA challenge when they attempt highly sensitive actions. This includes downloading a bulk archive of protocols, deleting a folder, changing user permissions, or modifying their own profile details.

@@ -7,6 +7,7 @@ describe('TenantsRepository (platform-admin registry, not tenant-scoped)', () =>
     findOne: jest.fn(),
     create: jest.fn(),
     updateOne: jest.fn(),
+    deleteOne: jest.fn(),
   };
 
   beforeEach(() => jest.clearAllMocks());
@@ -36,5 +37,18 @@ describe('TenantsRepository (platform-admin registry, not tenant-scoped)', () =>
     const id = new Types.ObjectId();
     repo.setStatus(id, 'suspended');
     expect(model.updateOne).toHaveBeenCalledWith({ _id: id }, { $set: { status: 'suspended' } });
+  });
+
+  it('findBySubdomain() queries by the subdomain field (Phase C, C1.2/C2.4)', () => {
+    const repo = new TenantsRepository(model as any);
+    repo.findBySubdomain('acme');
+    expect(model.findOne).toHaveBeenCalledWith({ subdomain: 'acme' });
+  });
+
+  it('deleteById() removes by _id (Phase C, C1.2 provisioning-rollback compensating action)', () => {
+    const repo = new TenantsRepository(model as any);
+    const id = new Types.ObjectId();
+    repo.deleteById(id);
+    expect(model.deleteOne).toHaveBeenCalledWith({ _id: id });
   });
 });

@@ -1,9 +1,11 @@
 import {
+  AccessTier,
   DecidingGrant,
   FolderGrantInput,
   FolderInput,
   FolderPermissionResolution,
   FolderWideningInfo,
+  GROUP_ROLE_TIER,
   PrincipalSet,
   tierRank,
 } from './types';
@@ -86,9 +88,24 @@ function readPrincipalKeys(bundle: EffectiveBundle): Set<string> {
  * permitted-folder sets. `folders` must be the tenant's complete folder list
  * (FoldersRepository.findAllForTenant()) — this function does not fetch data.
  */
+/**
+ * A principal's cap on any grant naming them: the user's own key is uncapped ('manage', the
+ * highest tier — a direct grant to a specific user always applies in full), each group key caps at
+ * GROUP_ROLE_TIER[role] (user-management plan, 2026-08-24) — a group grant only ever narrows down
+ * to what a member's role within that group allows, never widens it.
+ */
+function buildPrincipalCaps(principals: PrincipalSet): Map<string, AccessTier> {
+  const caps = new Map<string, AccessTier>();
+  caps.set(grantKey('user', principals.userId), 'manage');
+  for (const { groupId, role } of principals.groups) {
+    caps.set(grantKey('group', groupId), GROUP_ROLE_TIER[role]);
+  }
+  return caps;
+}
+
 export function resolveFolderPermissions(folders: FolderInput[], principals: PrincipalSet): FolderPermissionResolution {
   const effectiveBundles = computeEffectiveBundles(folders);
-  const principalKeys = new Set([grantKey('user', principals.userId), ...principals.groupIds.map((g) => grantKey('group', g))]);
+  const principalCaps = buildPrincipalCaps(principals);
 
   const permittedRead: string[] = [];
   const permittedEdit: string[] = [];
@@ -102,9 +119,22 @@ export function resolveFolderPermissions(folders: FolderInput[], principals: Pri
     let best: DecidingGrant | undefined = bundle.isPublic ? { tier: 'read', via: 'public' } : undefined;
 
     for (const grant of bundle.grants) {
-      if (!principalKeys.has(grantKey(grant.principalType, grant.principalId))) continue;
-      if (!best || tierRank(grant.access) > tierRank(best.tier)) {
-        best = { tier: grant.access, via: { principalType: grant.principalType, principalId: grant.principalId } };
+      const cap = principalCaps.get(grantKey(grant.principalType, grant.principalId));
+      if (!cap) continue;
+      // Fail closed on a malformed access value (should be impossible — folder.schema.ts enforces
+      // an enum — but this is a resolver-level backstop, not a database-integrity assumption). A
+      // bare `<=` comparison against tierRank's undefined-on-unknown-tier result would otherwise
+      // evaluate false and silently fall through to `cap` — for a direct user grant, cap is
+      // 'manage', so an uninterpretable grant would resolve to full access instead of no access.
+      const grantRank = tierRank(grant.access);
+      if (grantRank === undefined) continue;
+      const effective: AccessTier = grantRank <= tierRank(cap) ? grant.access : cap;
+      if (!best || tierRank(effective) > tierRank(best.tier)) {
+        best = {
+          tier: effective,
+          via: { principalType: grant.principalType, principalId: grant.principalId },
+          cappedFrom: effective !== grant.access ? grant.access : undefined,
+        };
       }
     }
 

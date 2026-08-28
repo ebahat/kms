@@ -69,3 +69,39 @@ describe('UsersRepository.findByEmailForAuth (pre-auth cross-tenant lookup)', ()
     expect(model.find).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));
   });
 });
+
+describe('UsersRepository.findByEmailInTenant (in-tenant lookup, 2026-08-28 bug fix)', () => {
+  const tenantId = new Types.ObjectId();
+
+  function scopedRepo(model: { findOne: jest.Mock }) {
+    const cls = new FakeCls();
+    cls.set(SCOPE_CLS_KEY, { tenantId, userId: new Types.ObjectId(), role: 'user', edition: 'kb', featureToggles: [] } as Scope);
+    return new UsersRepository(model as any, cls as any);
+  }
+
+  it('normalizes (trims + lowercases) the email and scopes the query by tenant', async () => {
+    const found = { _id: new Types.ObjectId(), email: 'a@b.com' };
+    const model = { modelName: 'User', findOne: jest.fn().mockResolvedValue(found) };
+    const repo = scopedRepo(model);
+
+    const result = await repo.findByEmailInTenant('  A@B.com  ');
+
+    expect(model.findOne).toHaveBeenCalledWith(expect.objectContaining({ email: 'a@b.com', tenantId }));
+    expect(result).toBe(found);
+  });
+
+  it('returns null for an email that does not exist in this tenant', async () => {
+    const model = { modelName: 'User', findOne: jest.fn().mockResolvedValue(null) };
+    const repo = scopedRepo(model);
+
+    await expect(repo.findByEmailInTenant('nobody@nowhere.com')).resolves.toBeNull();
+  });
+
+  it('throws MissingScopeError with no authenticated scope — never a silent cross-tenant lookup', async () => {
+    const cls = new FakeCls();
+    const model = { modelName: 'User', findOne: jest.fn() };
+    const repo = new UsersRepository(model as any, cls as any);
+
+    await expect(repo.findByEmailInTenant('a@b.com')).rejects.toThrow();
+  });
+});

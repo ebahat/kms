@@ -25,6 +25,13 @@ export interface FolderGrantInput {
   access: AccessTier;
 }
 
+/** A user's role within one group (user-management plan, 2026-08-24). Caps, never widens, whatever
+ * tier a folder grants to that group — `min(grant tier, GROUP_ROLE_TIER[role])`. */
+export type GroupMemberRole = 'viewer' | 'editor' | 'manager';
+
+/** The one place the membership vocabulary meets the folder-grant tier vocabulary. */
+export const GROUP_ROLE_TIER: Record<GroupMemberRole, AccessTier> = { viewer: 'read', editor: 'edit', manager: 'manage' };
+
 /**
  * One tenant folder as the resolver needs it. `parentId: null` marks a root
  * folder. `path`/timestamps/name etc. are irrelevant to authorization and
@@ -39,16 +46,23 @@ export interface FolderInput {
   isPublic: boolean;
 }
 
-/** The querying user's principal set — themselves plus every group they belong to (PRD §7 union rule). */
+/** The querying user's principal set — themselves plus every group they belong to, with the role
+ * held in each (PRD §7 union rule; role added by the user-management plan, 2026-08-24). */
 export interface PrincipalSet {
   userId: string;
-  groupIds: string[];
+  groups: { groupId: string; role: GroupMemberRole }[];
 }
 
 /** What decided a user's access to a folder — feeds the "why can Dana see this?" preview (UI spec C3). */
 export type DecidingGrant =
   | { tier: AccessTier; via: 'public' }
-  | { tier: AccessTier; via: { principalType: PrincipalType; principalId: string } };
+  | {
+      tier: AccessTier;
+      via: { principalType: PrincipalType; principalId: string };
+      /** Set when the deciding group grant was higher than this member's role allowed — the grant's
+       * own tier, before the cap, so the UI can explain "group had edit, you're a viewer → read". */
+      cappedFrom?: AccessTier;
+    };
 
 export interface FolderPermissionResolution {
   /** Each array is a superset of the tier below it — every `permittedManage` id is also in `permittedEdit` and `permittedRead`. */

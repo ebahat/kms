@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import RedisMock from 'ioredis-mock';
 import { hashPassword, RateLimiter, LocalMasterKeyProvider, encryptField, generateTotpSecret, NoopCaptchaVerifier } from '@kms/auth';
 import { SCOPE_CLS_KEY } from '@kms/data';
@@ -33,6 +34,8 @@ describe('AuthController (ADR-0004 login handshake)', () => {
   let cls: FakeCls;
   let rateLimiter: RateLimiter;
   let alerts: any;
+  let notifications: any;
+  let storage: any;
   let controller: AuthController;
   let realHash: string;
 
@@ -61,6 +64,8 @@ describe('AuthController (ADR-0004 login handshake)', () => {
     };
     cls = new FakeCls();
     alerts = { failedLoginBurst: jest.fn(), lockoutTriggered: jest.fn() };
+    notifications = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    storage = { getSignedDownloadUrl: jest.fn() };
 
     controller = new AuthController(
       users,
@@ -72,6 +77,8 @@ describe('AuthController (ADR-0004 login handshake)', () => {
       rateLimiter,
       new NoopCaptchaVerifier(),
       alerts,
+      notifications,
+      storage,
     );
   });
 
@@ -190,6 +197,54 @@ describe('AuthController (ADR-0004 login handshake)', () => {
     });
   });
 
+  describe('getSession', () => {
+    it('includes the tenant name, used by the app-shell header (Phase B)', async () => {
+      cls.set(SCOPE_CLS_KEY, { userId: fakeObjectIdHex(), tenantId: fakeObjectIdHex(), role: 'admin', edition: 'kb' });
+      tenants.findById.mockResolvedValueOnce({ edition: 'kb', name: 'Acme Corp' });
+
+      const result = await controller.getSession();
+
+      expect(result).toEqual({ role: 'admin', edition: 'kb', tenantName: 'Acme Corp' });
+      expect(storage.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('omits logoUrl/themeColorRgb when the tenant has neither set (Phase C, C1.3/C1.4)', async () => {
+      cls.set(SCOPE_CLS_KEY, { userId: fakeObjectIdHex(), tenantId: fakeObjectIdHex(), role: 'user', edition: 'kb' });
+      tenants.findById.mockResolvedValueOnce({ edition: 'kb', name: 'Acme Corp' });
+
+      const result = await controller.getSession();
+
+      expect(result.logoUrl).toBeUndefined();
+      expect(result.themeColorRgb).toBeUndefined();
+    });
+
+    it('issues a fresh signed URL for logoUrl when the tenant has a logoObjectKey (Phase C, C1.3)', async () => {
+      cls.set(SCOPE_CLS_KEY, { userId: fakeObjectIdHex(), tenantId: fakeObjectIdHex(), role: 'user', edition: 'kb' });
+      tenants.findById.mockResolvedValueOnce({ edition: 'kb', name: 'Acme Corp', logoObjectKey: 'tenants/t1/logo/abc.png', themeColorRgb: '#123456' });
+      storage.getSignedDownloadUrl.mockResolvedValueOnce({ url: 'https://signed.example/logo.png', expiresAt: new Date() });
+
+      const result = await controller.getSession();
+
+      expect(storage.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'tenants/t1/logo/abc.png',
+        expect.objectContaining({ displayFilename: expect.any(String), inline: true, contentType: 'image/png' }),
+      );
+      expect(result.logoUrl).toBe('https://signed.example/logo.png');
+      expect(result.themeColorRgb).toBe('#123456');
+    });
+
+    it('degrades to no logoUrl (not a 500) when signing fails, since this endpoint must never break login for cosmetic branding', async () => {
+      cls.set(SCOPE_CLS_KEY, { userId: fakeObjectIdHex(), tenantId: fakeObjectIdHex(), role: 'user', edition: 'kb' });
+      tenants.findById.mockResolvedValueOnce({ edition: 'kb', name: 'Acme Corp', logoObjectKey: 'tenants/t1/logo/missing.png' });
+      storage.getSignedDownloadUrl.mockRejectedValueOnce(new Error('no object at key'));
+
+      const result = await controller.getSession();
+
+      expect(result.logoUrl).toBeUndefined();
+      expect(result.role).toBe('user');
+    });
+  });
+
   describe('logout', () => {
     it('revokes the session and clears the cookie', async () => {
       const userId = fakeObjectIdHex();
@@ -201,6 +256,176 @@ describe('AuthController (ADR-0004 login handshake)', () => {
       expect(result).toEqual({ ok: true });
       expect(sessions.revoke).toHaveBeenCalledWith('tenant', 'sid', userId.toString());
       expect(res.clearCookie).toHaveBeenCalled();
+    });
+  });
+
+  describe('password reset request', () => {
+    it('emails a reset link to a known, active user', async () => {
+      users.findByEmailForAuth.mockResolvedValueOnce({
+        _id: fakeObjectIdHex(),
+        tenantId: fakeObjectIdHex(),
+        role: 'user',
+        status: 'active',
+      });
+
+      const result = await controller.requestPasswordReset({ email: 'a@b.com' });
+
+      expect(result).toEqual({ ok: true });
+      expect(notifications.sendEmail).toHaveBeenCalledTimes(1);
+      const call = notifications.sendEmail.mock.calls[0][0];
+      expect(call.to).toBe('a@b.com');
+      expect(call.body).toContain('token=');
+    });
+
+    it('sends no email for an unknown user, but returns the same response (enumeration resistance)', async () => {
+      users.findByEmailForAuth.mockResolvedValueOnce(null);
+
+      const result = await controller.requestPasswordReset({ email: 'nobody@x.com' });
+
+      expect(result).toEqual({ ok: true });
+      expect(notifications.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('sends no email for an inactive user', async () => {
+      users.findByEmailForAuth.mockResolvedValueOnce({
+        _id: fakeObjectIdHex(),
+        tenantId: fakeObjectIdHex(),
+        role: 'user',
+        status: 'inactive',
+      });
+
+      await controller.requestPasswordReset({ email: 'a@b.com' });
+
+      expect(notifications.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('sends no email for a pending user — they must consume their invite, not a reset link (user-management plan, 2026-08-24)', async () => {
+      users.findByEmailForAuth.mockResolvedValueOnce({
+        _id: fakeObjectIdHex(),
+        tenantId: fakeObjectIdHex(),
+        role: 'user',
+        status: 'pending',
+      });
+
+      const result = await controller.requestPasswordReset({ email: 'invited@b.com' });
+
+      expect(result).toEqual({ ok: true }); // same response either way (enumeration resistance)
+      expect(notifications.sendEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('login (pending users)', () => {
+    it('rejects a pending user with the same generic error as bad credentials', async () => {
+      users.findByEmailForAuth.mockResolvedValueOnce({
+        _id: fakeObjectIdHex(),
+        tenantId: fakeObjectIdHex(),
+        role: 'user',
+        status: 'pending',
+        passwordHash: realHash,
+      });
+
+      await expect(
+        controller.login({ email: 'invited@b.com', password: 'correct-horse-battery-staple' }, fakeRes()),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(sessions.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('activation (user-management plan, 2026-08-24)', () => {
+    describe('activate/check', () => {
+      it('is valid for a pending user with a matching, unexpired token', async () => {
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          status: 'pending',
+          inviteTokenHash: createHash('sha256').update('good-token', 'utf8').digest('hex'),
+          inviteExpiresAt: new Date(Date.now() + 60_000),
+        });
+
+        const result = await controller.checkActivationToken({ email: 'a@b.com', token: 'good-token' });
+        expect(result).toEqual({ valid: true });
+      });
+
+      it('is invalid for an unknown user (no enumeration signal beyond the boolean)', async () => {
+        users.findByEmailForAuth.mockResolvedValueOnce(null);
+        const result = await controller.checkActivationToken({ email: 'nobody@b.com', token: 'anything' });
+        expect(result).toEqual({ valid: false });
+      });
+
+      it('is invalid for a user who already activated (status active, not pending)', async () => {
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          status: 'active',
+          inviteTokenHash: undefined,
+          inviteExpiresAt: undefined,
+        });
+        const result = await controller.checkActivationToken({ email: 'a@b.com', token: 'stale-token' });
+        expect(result).toEqual({ valid: false });
+      });
+
+      it('is invalid for an expired token', async () => {
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          status: 'pending',
+          inviteTokenHash: createHash('sha256').update('good-token', 'utf8').digest('hex'),
+          inviteExpiresAt: new Date(Date.now() - 1000),
+        });
+        const result = await controller.checkActivationToken({ email: 'a@b.com', token: 'good-token' });
+        expect(result).toEqual({ valid: false });
+      });
+    });
+
+    describe('activate/confirm', () => {
+      it('sets a real password, flips status to active, stamps activatedAt, and clears the invite token', async () => {
+        const userId = fakeObjectIdHex();
+        const tokenHash = createHash('sha256').update('good-token', 'utf8').digest('hex');
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          _id: userId,
+          tenantId: fakeObjectIdHex(),
+          role: 'user',
+          status: 'pending',
+          inviteTokenHash: tokenHash,
+          inviteExpiresAt: new Date(Date.now() + 60_000),
+        });
+
+        const result = await controller.confirmActivation({ email: 'a@b.com', token: 'good-token', newPassword: 'a-long-enough-password-123' });
+
+        expect(result).toEqual({ ok: true });
+        expect(users.updateOne).toHaveBeenCalledWith(
+          { _id: userId },
+          {
+            $set: { passwordHash: expect.any(String), status: 'active', activatedAt: expect.any(Date) },
+            $unset: { inviteTokenHash: '', inviteExpiresAt: '' },
+          },
+        );
+      });
+
+      it('rejects an expired or wrong token', async () => {
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          status: 'pending',
+          inviteTokenHash: undefined,
+          inviteExpiresAt: undefined,
+        });
+
+        await expect(
+          controller.confirmActivation({ email: 'a@b.com', token: 'wrong', newPassword: 'a-long-enough-password-123' }),
+        ).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('rejects an already-active user reusing an old invite link', async () => {
+        const tokenHash = createHash('sha256').update('good-token', 'utf8').digest('hex');
+        users.findByEmailForAuth.mockResolvedValueOnce({
+          status: 'active',
+          inviteTokenHash: tokenHash,
+          inviteExpiresAt: new Date(Date.now() + 60_000),
+        });
+
+        await expect(
+          controller.confirmActivation({ email: 'a@b.com', token: 'good-token', newPassword: 'a-long-enough-password-123' }),
+        ).rejects.toThrow(UnauthorizedException);
+      });
+
+      it('rejects a password shorter than the 12-character floor', async () => {
+        await expect(
+          controller.confirmActivation({ email: 'a@b.com', token: 'good-token', newPassword: 'short' }),
+        ).rejects.toThrow();
+      });
     });
   });
 

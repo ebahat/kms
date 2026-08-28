@@ -19,15 +19,32 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email!: string;
 
+  /**
+   * Optional so every user seeded/created before this field existed (bootstrap/seed.ts, the
+   * dev-harness, any pre-2026-08-22 tenant) keeps working unrouted — the /users table falls back
+   * to the email when either is absent, same additive-field precedent as Tenant.subdomain.
+   * Required going forward at the API boundary (CreateUserRequestSchema/CsvImportRowSchema), not
+   * enforced here in the schema itself.
+   */
+  @Prop({ trim: true })
+  firstName?: string;
+
+  @Prop({ trim: true })
+  lastName?: string;
+
   @Prop({ required: true })
   passwordHash!: string;
 
   @Prop({ required: true, enum: ['user', 'admin'], default: 'user' })
   role!: 'user' | 'admin';
 
-  /** 'locked' is set by login hardening after repeated failures and cleared only by a tenant admin (PRD §3). */
-  @Prop({ required: true, enum: ['active', 'inactive', 'locked'], default: 'active' })
-  status!: 'active' | 'inactive' | 'locked';
+  /**
+   * 'pending' = invited but never completed activation (passwordHash is an unguessable random
+   * placeholder no one knows — see invite flow). 'locked' is set by login hardening after repeated
+   * failures and cleared only by a tenant admin (PRD §3). User-management plan, 2026-08-24.
+   */
+  @Prop({ required: true, enum: ['pending', 'active', 'inactive', 'locked'], default: 'active' })
+  status!: 'pending' | 'active' | 'inactive' | 'locked';
 
   @Prop({ default: false })
   mfaEnabled!: boolean;
@@ -55,6 +72,25 @@ export class User {
 
   @Prop()
   passwordResetExpiresAt?: Date;
+
+  /**
+   * Invite-activation token — deliberately separate from the passwordReset* pair above so an
+   * admin-issued invite (24h TTL) and a user-initiated reset (30min TTL) never collide on the same
+   * fields (user-management plan, 2026-08-24). Same SHA-256-hash-only discipline.
+   */
+  @Prop()
+  inviteTokenHash?: string;
+
+  @Prop()
+  inviteExpiresAt?: Date;
+
+  /**
+   * Set once, the first time this user actually completes activation. Lets reactivate() tell "was
+   * deactivated after really using the system" (-> 'active') apart from "was deactivated while the
+   * invite was still outstanding" (-> back to 'pending' + a fresh invite email).
+   */
+  @Prop()
+  activatedAt?: Date;
 }
 
 export type UserDocument = HydratedDocument<User> & { _id: Types.ObjectId };

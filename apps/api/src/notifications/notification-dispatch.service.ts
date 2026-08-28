@@ -41,7 +41,7 @@ export class NotificationDispatchService {
   async notifyEventCreated(event: EventDocument): Promise<void> {
     const group = await this.groups.findById(event.groupId);
     if (!group) return;
-    const recipients = group.memberUserIds.filter((id) => !id.equals(event.createdBy));
+    const recipients = group.members.map((m) => m.userId).filter((id) => !id.equals(event.createdBy));
     await this.emailUsers(
       recipients,
       `Invited: ${event.title}`,
@@ -181,7 +181,7 @@ export class NotificationDispatchService {
     const group = await this.groups.findById(groupId);
     if (!group) return [];
     const allIds = new Set((await this.preferences.findAllWithPreference(field, 'all')).map((p) => p.userId.toString()));
-    return group.memberUserIds.filter((id) => !id.equals(actorUserId) && allIds.has(id.toString()));
+    return group.members.map((m) => m.userId).filter((id) => !id.equals(actorUserId) && allIds.has(id.toString()));
   }
 
   private dedupeExcluding(actorUserId: ObjectId, ids: ObjectId[]): ObjectId[] {

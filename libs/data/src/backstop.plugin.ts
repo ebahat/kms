@@ -30,9 +30,8 @@ export function tenantScopeBackstopPlugin(schema: Schema) {
     const pipeline = this.pipeline();
     const first = pipeline[0];
     const tenantId = getCurrentScope()?.tenantId;
-    if (!first?.$match || String(first.$match.tenantId) !== String(tenantId)) {
-      throw new UnscopedQueryError(this._model?.modelName ?? 'unknown', 'aggregate');
-    }
+    if (isProperlyScopedFirstStage(first, tenantId)) return;
+    throw new UnscopedQueryError(this._model?.modelName ?? 'unknown', 'aggregate');
   });
 
   schema.pre('save', function (this: any) {
@@ -43,6 +42,26 @@ export function tenantScopeBackstopPlugin(schema: Schema) {
       this.tenantId = scope.tenantId;
     }
   });
+}
+
+/**
+ * A pipeline's first stage proves tenant scoping in one of two shapes:
+ * `$match.tenantId` (every ordinary aggregate, via `ScopedRepository.aggregate()`'s automatic
+ * prepending) or `$vectorSearch.filter.tenantId` / `$search.compound.filter[].equals` (Atlas Vector
+ * Search / Atlas Search — ADR-0002 — whose `$vectorSearch`/`$search` stage MUST be the pipeline's
+ * literal first stage, so the tenant filter has to live inside that stage's own `filter` instead of
+ * a preceding `$match`; `ChunksRepository`'s Atlas-path methods call `model.aggregate()` directly
+ * for exactly this reason, not the `ScopedRepository.aggregate()` helper). Both shapes are
+ * structural proof, not convention — this function is the one place either is trusted.
+ */
+export function isProperlyScopedFirstStage(first: Record<string, any> | undefined, tenantId: unknown): boolean {
+  if (first?.$match && String(first.$match.tenantId) === String(tenantId)) return true;
+  if (first?.$vectorSearch?.filter && String(first.$vectorSearch.filter.tenantId) === String(tenantId)) return true;
+  if (Array.isArray(first?.$search?.compound?.filter)) {
+    const tenantClause = first.$search.compound.filter.find((f: any) => f?.equals?.path === 'tenantId');
+    if (tenantClause && String(tenantClause.equals.value) === String(tenantId)) return true;
+  }
+  return false;
 }
 
 function assertTenantFilter(filter: Record<string, unknown>, modelName: string, operation: string) {

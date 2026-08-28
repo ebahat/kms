@@ -16,11 +16,13 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
   let cls: any;
   let documents: any;
   let documentVersions: any;
+  let chunks: any;
   let tenants: any;
   let permissions: any;
   let auditEvents: any;
   let recycleBinEntries: any;
   let deletionVerifications: any;
+  let folders: any;
   let storage: any;
   let ingestionQueue: any;
   let notifications: any;
@@ -34,6 +36,9 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       findByFolder: jest.fn().mockResolvedValue([]),
       setLatestVersion: jest.fn().mockResolvedValue(undefined),
       deleteOne: jest.fn().mockResolvedValue(undefined),
+      renameDocument: jest.fn(),
+      moveDocument: jest.fn(),
+      touchLastOpened: jest.fn().mockResolvedValue(undefined),
     };
     documentVersions = {
       createVersion: jest.fn().mockImplementation((doc) => Promise.resolve({ _id: doc.id ?? newObjectId() })),
@@ -43,6 +48,7 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       findByDocument: jest.fn().mockResolvedValue([]),
       deleteOne: jest.fn().mockResolvedValue(undefined),
     };
+    chunks = { deleteManyByDocument: jest.fn().mockResolvedValue(undefined), updateFolderId: jest.fn().mockResolvedValue(undefined) };
     tenants = { findById: jest.fn().mockResolvedValue({ storageQuotaBytes: 1_073_741_824 }) };
     permissions = {
       canUploadTo: jest.fn().mockResolvedValue(true),
@@ -53,10 +59,12 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
     recycleBinEntries = {
       createEntry: jest.fn().mockResolvedValue({ _id: newObjectId() }),
       findById: jest.fn(),
+      findPending: jest.fn().mockResolvedValue([]),
       markRestored: jest.fn().mockResolvedValue(undefined),
       markPurged: jest.fn().mockResolvedValue(undefined),
     };
     deletionVerifications = { record: jest.fn().mockResolvedValue(undefined) };
+    folders = { findById: jest.fn().mockResolvedValue({ name: 'Some Folder' }) };
     storage = {
       putObject: jest.fn().mockResolvedValue(undefined),
       getSignedDownloadUrl: jest.fn().mockResolvedValue({ url: 'https://signed.example/x', expiresAt: new Date('2026-01-01T00:05:00Z') }),
@@ -69,11 +77,13 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       cls,
       documents,
       documentVersions,
+      chunks,
       tenants,
       permissions,
       auditEvents,
       recycleBinEntries,
       deletionVerifications,
+      folders,
       storage,
       ingestionQueue,
       notifications,
@@ -208,6 +218,98 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       documentVersions.findById.mockResolvedValue(null);
       await expect(controller.download(documentId.toString(), newObjectId().toString())).rejects.toThrow(NotFoundException);
     });
+
+    it('stamps lastOpenedAt on a successful download', async () => {
+      await controller.download(documentId.toString());
+      expect(documents.touchLastOpened).toHaveBeenCalledWith(documentId);
+    });
+
+    it('does not stamp lastOpenedAt when access is denied', async () => {
+      permissions.canRead.mockResolvedValue(false);
+      await expect(controller.download(documentId.toString())).rejects.toThrow(NotFoundException);
+      expect(documents.touchLastOpened).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update (rename/move, document-file-actions plan, 2026-08-28)', () => {
+    const documentId = newObjectId();
+
+    const latestVersionId = newObjectId();
+    const createdBy = newObjectId();
+
+    beforeEach(() => {
+      documents.findById.mockResolvedValue({
+        _id: documentId,
+        folderId,
+        name: 'Report.pdf',
+        status: 'queued',
+        latestVersionId,
+        createdBy,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+      });
+      documentVersions.findById.mockResolvedValue({ _id: latestVersionId, versionNumber: 1, sizeBytes: 10 });
+    });
+
+    it('rejects an empty patch', async () => {
+      await expect(controller.update(documentId.toString(), {})).rejects.toThrow(BadRequestException);
+    });
+
+    it('404s for a document that does not resolve within this tenant scope', async () => {
+      documents.findById.mockResolvedValue(null);
+      await expect(controller.update(documentId.toString(), { name: 'X' })).rejects.toThrow(NotFoundException);
+    });
+
+    it('renames when the caller has edit access to the current folder', async () => {
+      await controller.update(documentId.toString(), { name: 'Renamed.pdf' });
+
+      expect(permissions.canUploadTo).toHaveBeenCalledWith(folderId.toString());
+      expect(documents.renameDocument).toHaveBeenCalledWith(documentId, 'Renamed.pdf');
+      expect(auditEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'document.renamed', targetId: documentId, metadata: { name: 'Renamed.pdf' } }),
+      );
+    });
+
+    it('404s a rename when the caller lacks edit access to the current folder', async () => {
+      permissions.canUploadTo.mockResolvedValue(false);
+      await expect(controller.update(documentId.toString(), { name: 'Renamed.pdf' })).rejects.toThrow(NotFoundException);
+      expect(documents.renameDocument).not.toHaveBeenCalled();
+    });
+
+    it('moves when the caller has edit access to both the source and destination folders', async () => {
+      const destinationId = newObjectId();
+      folders.findById.mockResolvedValue({ _id: destinationId, name: 'Destination' });
+
+      await controller.update(documentId.toString(), { folderId: destinationId.toString() });
+
+      expect(permissions.canUploadTo).toHaveBeenCalledWith(folderId.toString());
+      expect(permissions.canUploadTo).toHaveBeenCalledWith(destinationId.toString());
+      expect(documents.moveDocument).toHaveBeenCalledWith(documentId, destinationId);
+      expect(auditEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'document.moved', targetId: documentId, metadata: { folderId: destinationId.toString() } }),
+      );
+    });
+
+    it('404s a move to a folder that does not exist in this tenant', async () => {
+      folders.findById.mockResolvedValue(null);
+      await expect(controller.update(documentId.toString(), { folderId: newObjectId().toString() })).rejects.toThrow(NotFoundException);
+      expect(documents.moveDocument).not.toHaveBeenCalled();
+    });
+
+    it('404s a move when the caller lacks edit access to the destination folder', async () => {
+      const destinationId = newObjectId();
+      folders.findById.mockResolvedValue({ _id: destinationId, name: 'Destination' });
+      permissions.canUploadTo.mockImplementation((id: string) => Promise.resolve(id !== destinationId.toString()));
+
+      await expect(controller.update(documentId.toString(), { folderId: destinationId.toString() })).rejects.toThrow(NotFoundException);
+      expect(documents.moveDocument).not.toHaveBeenCalled();
+    });
+
+    it('404s a move when the caller lacks edit access to the source folder, before ever checking the destination', async () => {
+      permissions.canUploadTo.mockResolvedValue(false);
+      await expect(controller.update(documentId.toString(), { folderId: newObjectId().toString() })).rejects.toThrow(NotFoundException);
+      expect(folders.findById).not.toHaveBeenCalled();
+    });
   });
 
   describe('delete (PRD §8, sec §7.3)', () => {
@@ -266,6 +368,62 @@ describe('DocumentsController (upload path — ADR-0006/0003, PRD §8)', () => {
       await controller.delete(documentId.toString());
 
       expect(notifications.notifyFileDeleted).toHaveBeenCalledWith(expect.objectContaining({ _id: documentId, folderId }));
+    });
+  });
+
+  describe('listRecycleBin (UI spec C4, admin-only)', () => {
+    it('resolves each entry\'s folder name and the max version size, and returns pending entries only (findPending already filters)', async () => {
+      const entryId = newObjectId();
+      const documentId = newObjectId();
+      recycleBinEntries.findPending.mockResolvedValue([
+        {
+          _id: entryId,
+          documentId,
+          folderId,
+          name: 'report.pdf',
+          deletedAt: new Date('2026-08-01T00:00:00Z'),
+          purgeAfter: new Date('2026-08-31T00:00:00Z'),
+          versions: [
+            { versionNumber: 1, sizeBytes: 10 },
+            { versionNumber: 2, sizeBytes: 30 },
+          ],
+        },
+      ]);
+
+      const result = await controller.listRecycleBin();
+
+      expect(folders.findById).toHaveBeenCalledWith(folderId);
+      expect(result).toEqual([
+        {
+          id: entryId.toString(),
+          documentId: documentId.toString(),
+          name: 'report.pdf',
+          folderId: folderId.toString(),
+          folderName: 'Some Folder',
+          sizeBytes: 30,
+          deletedAt: new Date('2026-08-01T00:00:00Z'),
+          purgeAfter: new Date('2026-08-31T00:00:00Z'),
+        },
+      ]);
+    });
+
+    it('reports a null folderName rather than throwing when the original folder was itself deleted', async () => {
+      folders.findById.mockResolvedValueOnce(null);
+      recycleBinEntries.findPending.mockResolvedValue([
+        {
+          _id: newObjectId(),
+          documentId: newObjectId(),
+          folderId,
+          name: 'orphaned.pdf',
+          deletedAt: new Date(),
+          purgeAfter: new Date(),
+          versions: [{ versionNumber: 1, sizeBytes: 5 }],
+        },
+      ]);
+
+      const [result] = await controller.listRecycleBin();
+
+      expect(result.folderName).toBeNull();
     });
   });
 

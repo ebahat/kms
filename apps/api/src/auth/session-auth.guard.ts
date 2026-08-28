@@ -48,6 +48,13 @@ export class SessionAuthGuard implements CanActivate {
       role: record.role,
       edition: record.edition ?? 'kb',
       featureToggles: record.featureToggles ?? [],
+      // Every tenant-realm session is its own owner — there is no "act on behalf of another user"
+      // concept for OwnerScopedRepository resources (ocrFiles, conversations, messages). Without
+      // this, `OwnerScopedRepository.buildFilter` throws MissingScopeError on every real request,
+      // since `ownerUserId` was otherwise never populated anywhere in the login/session path (found
+      // via a real HTTP round trip in the document-chat-rag plan's chat integration test — the
+      // first real consumer of OwnerScopedRepository).
+      ownerUserId: record.userId,
     });
     this.cls.set(SCOPE_CLS_KEY, scope);
     this.cls.set(TOS_VERSION_CLS_KEY, record.tosVersion);

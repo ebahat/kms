@@ -20,6 +20,8 @@ ADR-0010 (schema migrations): written during P1; must be Accepted before the fir
 
 **Updated 2026-08-15 (later same day):** v1.0 scope narrowed further — Phase 3 (ingestion/OCR) is explicitly deferred, not to be started without being asked. v1.0 is the file hierarchy alone: auth (P1) + folders/permissions/groups/upload/download (P2), nothing that depends on document processing. See Phase 3's own note below.
 
+**Updated 2026-08-28:** the user explicitly asked to resume Phase 3 + Phase 4 together ("implement the LLM chat," confirmed as full RAG). `docs/plans/document-chat-rag-28-08-2026-plan.md` closed most of both phases in one pass — real ingestion (BullMQ, parse/chunk/embed/index), real permission-scoped hybrid retrieval with a semantic-relevance floor, and a real streaming chat UI, all live-verified — but neither phase is now `DONE`: several items were deliberately narrowed or cut (real clamd, OCR, the failure-taxonomy/breaker, the processing-queue UI, and — the biggest one — Lane E1's Hebrew eval corpora and the ADR-0008 benchmark gate that finalizes the provider commitment). See each phase's own checkboxes below for the item-by-item breakdown; this v1.0-scope note is otherwise unaffected — the file hierarchy remains v1.0, chat shipped as an additive, opt-in-module screen behind ADR-0012's `'llm'` flag.
+
 Each phase ends with: unit/integration tests green, the code-quality pipeline (working rule 4: review → simplify → `snyk_code_scan` → final review), and the cross-tenant suite green.
 
 ---
@@ -103,44 +105,44 @@ the v1.1 work, alongside enabling the toggle.
 
 ## Phase 3 — Ingestion pipeline
 
-**Descoped from v1.0 (2026-08-15):** v1.0 ships as the file hierarchy only — folders, permissions,
-groups, upload/download/recycle-bin (all Phase 2, done) — with no document processing. An uploaded
-file's `status` is set to `'queued'` (`DocumentsController.upload`) and, until this phase is built,
-simply stays there forever: `INGESTION_QUEUE` is bound to `LoggingIngestionQueue`
-(`apps/api/src/documents/documents.providers.ts`), a stub that only logs, not a real BullMQ queue with
-a worker consuming it. This is a deliberate, not accidental, gap — do not start building Phase 3 (OCR
-included) until explicitly asked to resume it. Folder browsing, permissions, and plain file
-upload/download/deletion all work today independent of this phase; only search/chat/OCR-derived text
-extraction depend on it.
+**Descoped from v1.0 (2026-08-15), then partially resumed 2026-08-28** via
+`docs/plans/document-chat-rag-28-08-2026-plan.md` at the user's explicit request ("implement the LLM
+chat", confirmed to mean full RAG — real ingestion feeding real retrieval-grounded chat, not a bare
+chat with no document grounding). That plan un-paused Phase 3 alongside Phase 4 since chat cannot be
+real without a real corpus behind it, but deliberately narrowed several items (real clamd, the
+failure-taxonomy/circuit-breaker item, OCR, the processing-queue UI, the full poison-file corpus) —
+see the plan's own "Mapping to the master phase plan" table for the item-by-item reasoning. v1.0
+itself is still unaffected: this work shipped as an additive `/chat` screen behind the `'llm'`
+module-entitlement flag (ADR-0012, off by default), not a change to the folder-hierarchy v1.0 scope.
 
-- [ ] 3.1 BullMQ topology (ADR-0003): stage queues `scan→parse|ocr-*→chunk→embed→index` on `redis-queue`; `WORKER_POOL` selection with boot-time queue/SA assertion (ADR-0009); job payload scope rehydration into CLS.
-- [ ] 3.2 clamd service + `scan` stage (in-VPC, freshclam-only egress, stale-signature alert); infected ⇒ reject + audit.
-- [ ] 3.3 `parse` stage in the sandboxed pool: XXE off, zip-bomb/entry-count/pixel guards, pinned parsers, stage timeouts (sec §4.4).
-- [ ] 3.4 **Failure taxonomy + circuit breaker** (design review finding 2): defect-vs-transient classifier, extended backoff holding `processing`, per-queue pause/canary/resume breaker, PRD §5 provider panel + sec §8.3 alerts, DLQ + poison-pattern alerting for defects only.
-- [ ] 3.5 `chunk` stage: splitting, language detect, page mapping (ADR-0002 schema).
-- [ ] 3.6 OCR stages: Classic (Google Vision primary, Azure fallback) + Advanced (vision LLM via `libs/ai-providers`), admin Classic-only enforcement; **atomic quota reservation** at enqueue + idempotent `usageEvents` upserts on `{versionId, stage}` with a concurrency test (design review finding 7; PRD §9).
-- [ ] 3.7 Processing-queue UI: per-user personal queue, sanitized actionable errors, retry button (defects only), "provider delay" state (PRD §8).
-- [ ] 3.8 Tests: poison-file corpus (zip bomb, XXE, decompression bomb), per-stage idempotency re-runs, breaker behavior under simulated 5xx storms, egress canary probe against `snet-parse` in staging (test plan §3.3).
+- [DONE] 3.1 BullMQ topology (ADR-0003): real `Worker`/`Queue` construction (`apps/worker/src/main.ts`), `WORKER_POOL` selection (pre-existing), per-job CLS scope rehydration via a synthetic system-actor `Scope` (not `SystemScope` — each job is single-tenant). Boot-time queue/SA assertion not built (no live deployment to assert against yet).
+- [PARTIAL] 3.2 `scan` stage: real control flow (clean/infected → `documents.status`/audit) built and tested against `FakePassThroughScanProvider` (EICAR-string reject case). Real `ClamdScanProvider` (INSTREAM protocol) is written and unit-tested against a real in-process TCP server exercising the wire framing, but never run against a live clamd daemon — unverified, same status as this codebase's other real-but-uncredentialed provider bindings (`GcsStorageProvider` etc.).
+- [DONE] 3.3 `parse` stage: PDF (`pdf-parse`) + DOCX (`mammoth`) real text extraction, zip-bomb/entry-count ceilings on DOCX before mammoth touches it, page-count ceiling on PDF, stage logic fully unit-tested. JPG/PNG and text-sparse scanned pages route to no OCR (see 3.6) rather than blocking.
+- [ ] 3.4 Failure taxonomy + circuit breaker — not built this pass.
+- [DONE] 3.5 `chunk` stage: deterministic paragraph-first splitter with overlap, Hebrew/English/mixed language detection, page mapping preserved from `parse`.
+- [ ] 3.6 OCR stages — cut this pass; image uploads and text-sparse scanned PDF pages contribute no text rather than blocking the pipeline. A second external-provider integration (Vision/vision-LLM) is a real follow-up, not attempted.
+- [ ] 3.7 Processing-queue UI — not built this pass.
+- [PARTIAL] 3.8 Tests: per-stage idempotency and the EICAR-reject control-flow case covered at unit/integration level (`apps/worker`'s own integration suite, real `mongodb-memory-server`, plus a best-effort live BullMQ+Redis smoke run proving the real queue round-trip). The full poison-file corpus (zip bomb/XXE/decompression-bomb suite) and breaker-under-simulated-5xx-storm tests are not built (3.4 doesn't exist yet for the breaker half to test).
 
-**Exit criteria:** a clean document reaches `chunk` output artifacts in GCS; an infected/poison file is rejected with audit + alert; a simulated provider outage produces queue lag and zero `failed` documents; p95 stage budgets measured.
+**Exit criteria — partially met:** a clean document reaches real indexed `chunks` (verified both via `mongodb-memory-server` integration tests and a live real-Redis/real-BullMQ smoke run); an infected file is rejected with audit, verified against the Fake scan provider only (not a live clamd). A simulated provider outage / p95 stage-budget measurement was not exercised — no breaker exists yet to produce that behavior.
 
 ## Phase 4 — Retrieval & chat *(gate phase — depends on lane E1)*
 
 **Lane E1 (parallel — start during P1, owner + assistant authored):**
-- [ ] E1.1 Author Hebrew golden datasets (test plan §4.1): `heb-qa` (300), `heb-prefix` (80), `exact-term` (100), `mixed-lang` (60), `not-found`, `inject-docs`, `ocr-heb`; store under `test/evals/` with provenance notes.
-- [ ] E1.2 Eval harness runnable in CI (binary criteria, LLM-judge two-model rule, judge-validation session — test plan §4.0).
+- [ ] E1.1 Author Hebrew golden datasets (test plan §4.1): `heb-qa` (300), `heb-prefix` (80), `exact-term` (100), `mixed-lang` (60), `not-found`, `inject-docs`, `ocr-heb`; store under `test/evals/` with provenance notes. **Cut from the 2026-08-28 document-chat-rag pass** — see that plan's own rationale (no code dependency on the chat work, blocking chat on it would mean never shipping chat).
+- [ ] E1.2 Eval harness runnable in CI (binary criteria, LLM-judge two-model rule, judge-validation session — test plan §4.0). Cut for the same reason as E1.1.
 
 **Main lane:**
-- [ ] 4.1 `embed` + `index` stages; Atlas Vector (768-dim, parameterized on ADR-0008) + Atlas Search indexes with Hebrew dual-analyzer (H1, token-expansion fallback H2); purge-then-insert latest-version-only indexing (ADR-0002).
-- [ ] 4.2 `libs/ai-providers`: `ChatProvider`/`EmbeddingProvider`/`VisionOcrProvider` interfaces; Vertex adapters (IAM auth, pinned regional endpoints, batching 32, `Retry-After`, `usageEvents`); Claude/Cohere/OpenAI fallback adapters (ADR-0008); endpoints pinned into the `snet-ai` allowlist.
-- [ ] 4.3 `buildScopedRetrievalQuery` — the single audited constructor: tenant + permitted-folder pre-filter inside the query, RRF hybrid fusion (ADR-0002); standalone search endpoint reuses it.
-- [ ] 4.4 **Run the ADR-0008 Hebrew benchmark gate** on real staging indexes; record results in ADR-0008 Status; on failure follow the ADR's Vertex→Cohere→OpenAI procedure (never silent threshold changes). **This finalizes the provider commitment.** Prefer dimension-compatible fallbacks (design review finding 6).
-- [ ] 4.5 Chat: prompt architecture verbatim from ADR-0008 (delimited untrusted chunks, no tools), fail-closed grounding (empty set ⇒ no provider call), streamed answers, server-side citations with permission re-check on click, suggested follow-ups from shown content only; locked-down markdown renderer (text-only, no remote loads — UI spec §3.5).
-- [ ] 4.6 Cost/limit controls: 30 msg/h, tenant token budgets, input caps, spend alerts reconciled to `usageEvents` within 2% (test plan §4.10).
-- [ ] 4.7 Chat/search UI: conversation list (owner-scoped `conversations`/`messages` via `OwnerScopedRepository` — ADR-0001), citations with page links, "not found" state, bilingual behavior.
-- [ ] 4.8 Tests: retrieval pre-filter assertions (filter inside the query — test plan §3.5), eval suites §4.2–§4.6 (retrieval, faithfulness ≥ 97%, injection classes 0 successes), prompt-canary wiring live in CI.
+- [PARTIAL] 4.1 `embed` + `index` stages built and real (write `chunks`, purge-then-insert on re-version). Real Atlas Vector/Search index creation is a cluster-level step never performed — M0-tier Vector Search support itself is unconfirmed. `ChunksRepository.vectorSearchScoped`/`.textSearchScoped` are written to the literal `$vectorSearch`/`$search` pipeline shapes but unverified against a live cluster.
+- [PARTIAL] 4.2 `libs/ai-providers`: `ChatProvider`/`EmbeddingProvider` interfaces built; `FakeChatProvider`/`FakeEmbeddingProvider` are fully wired and exercised (dev/CI default). Real `VertexChatProvider`/`VertexEmbeddingProvider`/`ClaudeChatProvider` are written to ADR-0008's shape but never run — no live credentials in this environment. `VisionOcrProvider` and Cohere/OpenAI embedding fallbacks not built (OCR is cut, see 3.6).
+- [DONE] 4.3 `retrieveScoped()` (`libs/retrieval`) is the `buildScopedRetrievalQuery` equivalent: tenant + permitted-folder pre-filter, empty-permission fail-closed short-circuit (zero embedding/retrieval calls), RRF hybrid fusion shared by both the Fake and real-Atlas paths. A standalone search endpoint (PRD's B7) was not built — only the chat path consumes it.
+- [ ] 4.4 **Run the ADR-0008 Hebrew benchmark gate** — not done. Blocked on E1 (also cut). ADR-0008's provider decision stays provisional; this is the single largest gap against this phase's own original exit criteria below.
+- [DONE] 4.5 Chat: prompt architecture per ADR-0008 (delimited untrusted chunks framed as data, no tools), fail-closed grounding, streamed SSE answers, server-side citations built only from retrieval metadata (never from model text) with permission re-check on click (`GET /chat/citations/:chunkId`), mechanically-derived follow-ups, a purpose-built text/bold-only citation-chip renderer (no HTML/images/remote loads). Live-verified: found and fixed a real gap where a permitted-but-semantically-irrelevant question still returned a "grounded" answer — added a relevance-score floor (`MIN_RELEVANCE_SCORE`) so retrieval fails closed on irrelevance too, not only on missing permission.
+- [PARTIAL] 4.6 Cost/limit controls: 30 msg/h per-user + tenant monthly message-count budget built and enforced before any streaming starts (reusing the existing `RateLimiter`). Not token-precise (message-count proxy — no token-usage metering exists yet) and not admin-UI-configurable (env-configured defaults). Spend alerts reconciled to `usageEvents` not built (no `usageEvents` metering for chat exists).
+- [DONE] 4.7 Chat UI: conversation list (create/resume/delete) + thread view, owner-scoped `conversations`/`messages` via `OwnerScopedRepository` (the first two real consumers of it — found and fixed a load-bearing gap along the way: `SessionAuthGuard` never populated `Scope.ownerUserId` for a normal session, so every `OwnerScopedRepository` call would have thrown on first real use), citations with page numbers, "not found" as a visually distinct non-error state, rate-limit/budget banners. Standalone search UI (bilingual query, no chat) not built.
+- [PARTIAL] 4.8 Tests: retrieval pre-filter assertions covered directly (empty-permission short-circuit, real end-to-end fail-closed-vs-grounded contrast via a real HTTP round trip). Eval suites §4.2–§4.6 (faithfulness, injection-class success rate) and prompt-canary-in-CI wiring not built — depend on E1's datasets.
 
-**Exit criteria:** benchmark gate PASSED and recorded (or fallback adopted per procedure); a Hebrew question over staged documents returns a grounded, cited, permission-correct answer; injection suite at zero successes.
+**Exit criteria — not met:** the benchmark gate never ran, so the provider commitment is not finalized and this phase's own stated exit criteria ("benchmark gate PASSED and recorded... injection suite at zero successes") remain open. What IS demonstrated, live: a Hebrew question over real indexed content returns a grounded, cited, permission-correct answer via the Fake providers, and the fail-closed contrast (same question, permitted user vs. zero-permission user) holds for real over HTTP.
 
 ## Phase 5 — Smart OCR edition, portal completion, notifications
 

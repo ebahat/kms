@@ -67,6 +67,11 @@ export class RecycleBinEntry {
 
   @Prop({ required: true, enum: ['pending', 'restored', 'purged'], default: 'pending' })
   status!: 'pending' | 'restored' | 'purged';
+
+  /** Populated by `timestamps: { createdAt: 'deletedAt' }` below, not a real `@Prop` path — optional
+   * because ScopedRepository.create()'s `Omit<T, 'tenantId'>` input type would otherwise force
+   * createEntry() callers to supply a field Mongoose fills in itself at insert time. */
+  deletedAt?: Date;
 }
 
 export type RecycleBinEntryDocument = HydratedDocument<RecycleBinEntry> & { _id: Types.ObjectId };

@@ -4,7 +4,7 @@ import { newObjectId } from '@kms/data';
 import { GroupsController } from './groups.controller';
 
 function groupDoc(overrides: Partial<Record<string, any>> = {}) {
-  return { _id: newObjectId(), name: 'Group', memberUserIds: [], ...overrides };
+  return { _id: newObjectId(), name: 'Group', members: [], ...overrides };
 }
 
 function folderDoc(overrides: Partial<Record<string, any>> = {}) {
@@ -29,8 +29,10 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
     groups = {
       findAllForTenant: jest.fn().mockResolvedValue([]),
       findById: jest.fn(),
+      findOneByName: jest.fn().mockResolvedValue(null),
       createGroup: jest.fn(),
-      addMembers: jest.fn(),
+      rename: jest.fn(),
+      setMember: jest.fn(),
       removeMembers: jest.fn(),
       deleteOne: jest.fn().mockResolvedValue(undefined),
     };
@@ -43,18 +45,18 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
   });
 
   describe('list', () => {
-    it('returns every group as a summary, including memberUserIds for a group the caller belongs to', async () => {
-      const group = groupDoc({ memberUserIds: [userId] });
+    it('returns every group as a summary, including members (with role) for a group the caller belongs to', async () => {
+      const group = groupDoc({ members: [{ userId, role: 'editor' }] });
       groups.findAllForTenant.mockResolvedValue([group]);
 
       const result = await controller.list();
 
-      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', memberUserIds: [userId.toString()] }]);
+      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', members: [{ userId: userId.toString(), role: 'editor' }] }]);
     });
 
-    it('withholds memberUserIds for a group the non-admin caller does not belong to', async () => {
+    it('withholds members for a group the non-admin caller does not belong to', async () => {
       const other = newObjectId();
-      const group = groupDoc({ memberUserIds: [other] });
+      const group = groupDoc({ members: [{ userId: other, role: 'viewer' }] });
       groups.findAllForTenant.mockResolvedValue([group]);
 
       const result = await controller.list();
@@ -62,15 +64,15 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
       expect(result).toEqual([{ id: group._id.toString(), name: 'Group' }]);
     });
 
-    it('includes memberUserIds for every group when the caller is a tenant admin', async () => {
+    it('includes members for every group when the caller is a tenant admin', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       const other = newObjectId();
-      const group = groupDoc({ memberUserIds: [other] });
+      const group = groupDoc({ members: [{ userId: other, role: 'manager' }] });
       groups.findAllForTenant.mockResolvedValue([group]);
 
       const result = await controller.list();
 
-      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', memberUserIds: [other.toString()] }]);
+      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', members: [{ userId: other.toString(), role: 'manager' }] }]);
     });
   });
 
@@ -117,6 +119,62 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       await expect(controller.create({ name: '' })).rejects.toThrow(ZodError);
     });
+
+    it('409s when a group with this name already exists, and never calls createGroup', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      groups.findOneByName.mockResolvedValue(groupDoc({ name: 'Sales' }));
+
+      await expect(controller.create({ name: 'Sales' })).rejects.toThrow(ConflictException);
+      expect(groups.createGroup).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rename', () => {
+    it('404s a malformed id', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      await expect(controller.rename('not-an-object-id', { name: 'New Name' })).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s a nonexistent group', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      groups.findById.mockResolvedValue(null);
+      await expect(controller.rename(newObjectId().toString(), { name: 'New Name' })).rejects.toThrow(NotFoundException);
+    });
+
+    it('409s when another group already has the target name', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const group = groupDoc({ name: 'Old Name' });
+      const other = groupDoc({ name: 'Taken' });
+      groups.findById.mockResolvedValue(group);
+      groups.findOneByName.mockResolvedValue(other);
+
+      await expect(controller.rename(group._id.toString(), { name: 'Taken' })).rejects.toThrow(ConflictException);
+      expect(groups.rename).not.toHaveBeenCalled();
+    });
+
+    it("allows renaming a group to its own current name (not a self-conflict)", async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const group = groupDoc({ name: 'Same Name' });
+      groups.findById.mockResolvedValue(group);
+      groups.findOneByName.mockResolvedValue(group); // the only "match" is the group itself
+      groups.rename.mockResolvedValue(group);
+
+      await expect(controller.rename(group._id.toString(), { name: 'Same Name' })).resolves.toBeDefined();
+      expect(groups.rename).toHaveBeenCalledWith(group._id, 'Same Name');
+    });
+
+    it('renames and audits', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const group = groupDoc({ name: 'Old Name' });
+      const renamed = groupDoc({ _id: group._id, name: 'New Name' });
+      groups.findById.mockResolvedValue(group);
+      groups.rename.mockResolvedValue(renamed);
+
+      const result = await controller.rename(group._id.toString(), { name: 'New Name' });
+
+      expect(result.name).toBe('New Name');
+      expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'group.renamed', targetId: group._id }));
+    });
   });
 
   describe('updateMembers', () => {
@@ -128,37 +186,52 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
     it('404s a nonexistent group', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       groups.findById.mockResolvedValue(null);
-      await expect(controller.updateMembers(newObjectId().toString(), { add: [userId.toString()] })).rejects.toThrow(NotFoundException);
+      await expect(
+        controller.updateMembers(newObjectId().toString(), { add: [{ userId: userId.toString(), role: 'viewer' }] }),
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it('adds members, bumps permVersion, and audits', async () => {
+    it('adds a member with a role, bumps permVersion, and audits', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       const group = groupDoc();
       const newMember = newObjectId();
       groups.findById.mockResolvedValue(group);
-      groups.addMembers.mockResolvedValue({ ...group, memberUserIds: [newMember] });
+      groups.setMember.mockResolvedValue({ ...group, members: [{ userId: newMember, role: 'editor' }] });
 
-      await controller.updateMembers(group._id.toString(), { add: [newMember.toString()] });
+      await controller.updateMembers(group._id.toString(), { add: [{ userId: newMember.toString(), role: 'editor' }] });
 
-      expect(groups.addMembers).toHaveBeenCalledWith(group._id, [newMember]);
+      expect(groups.setMember).toHaveBeenCalledWith(group._id, newMember, 'editor');
       expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
       expect(auditEvents.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'group.members.updated' }));
+    });
+
+    it('changing an existing member’s role goes through setMember too — bumps permVersion just like an add/remove', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const member = newObjectId();
+      const group = groupDoc({ members: [{ userId: member, role: 'viewer' }] });
+      groups.findById.mockResolvedValue(group);
+      groups.setMember.mockResolvedValue({ ...group, members: [{ userId: member, role: 'manager' }] });
+
+      await controller.updateMembers(group._id.toString(), { add: [{ userId: member.toString(), role: 'manager' }] });
+
+      expect(groups.setMember).toHaveBeenCalledWith(group._id, member, 'manager');
+      expect(cache.bumpVersion).toHaveBeenCalledWith(tenantId.toString());
     });
 
     it('removes members', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       const member = newObjectId();
-      const group = groupDoc({ memberUserIds: [member] });
+      const group = groupDoc({ members: [{ userId: member, role: 'viewer' }] });
       groups.findById.mockResolvedValue(group);
-      groups.removeMembers.mockResolvedValue({ ...group, memberUserIds: [] });
+      groups.removeMembers.mockResolvedValue({ ...group, members: [] });
 
       await controller.updateMembers(group._id.toString(), { remove: [member.toString()] });
 
       expect(groups.removeMembers).toHaveBeenCalledWith(group._id, [member]);
-      expect(groups.addMembers).not.toHaveBeenCalled();
+      expect(groups.setMember).not.toHaveBeenCalled();
     });
 
-    it('runs remove before add, so the same id in both nets out as added', async () => {
+    it('runs remove before add, so the same id in both nets out as added with the given role', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
       const same = newObjectId();
       const group = groupDoc();
@@ -169,19 +242,28 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
         callOrder.push('remove');
         return Promise.resolve(group);
       });
-      groups.addMembers.mockImplementation(() => {
+      groups.setMember.mockImplementation(() => {
         callOrder.push('add');
         return Promise.resolve(group);
       });
 
-      await controller.updateMembers(group._id.toString(), { add: [same.toString()], remove: [same.toString()] });
+      await controller.updateMembers(group._id.toString(), { add: [{ userId: same.toString(), role: 'editor' }], remove: [same.toString()] });
 
       expect(callOrder).toEqual(['remove', 'add']);
     });
 
     it('rejects a malformed body', async () => {
       cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
-      await expect(controller.updateMembers(newObjectId().toString(), { add: ['not-an-object-id'] })).rejects.toThrow(ZodError);
+      await expect(controller.updateMembers(newObjectId().toString(), { add: [{ userId: 'not-an-object-id', role: 'viewer' }] })).rejects.toThrow(
+        ZodError,
+      );
+    });
+
+    it('rejects an invalid role', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      await expect(
+        controller.updateMembers(newObjectId().toString(), { add: [{ userId: userId.toString(), role: 'owner' }] }),
+      ).rejects.toThrow(ZodError);
     });
   });
 

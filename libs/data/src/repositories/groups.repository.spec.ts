@@ -33,12 +33,12 @@ describe('GroupsRepository', () => {
     expect(model.find).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));
   });
 
-  it('findForMember filters by memberUserIds in addition to tenant scope', () => {
+  it('findForMember filters by members.userId in addition to tenant scope', () => {
     const model = makeModel();
     const userId = new Types.ObjectId();
     const repo = new GroupsRepository(model as any, cls as any);
     repo.findForMember(userId);
-    expect(model.find).toHaveBeenCalledWith(expect.objectContaining({ tenantId, memberUserIds: userId }));
+    expect(model.find).toHaveBeenCalledWith(expect.objectContaining({ tenantId, 'members.userId': userId }));
   });
 
   it('createGroup starts with no members', async () => {
@@ -48,30 +48,50 @@ describe('GroupsRepository', () => {
 
     await repo.createGroup('Sales');
 
-    expect(model.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sales', memberUserIds: [], tenantId }));
+    expect(model.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sales', members: [], tenantId }));
   });
 
-  it('addMembers uses $addToSet, not a whole-array $set', async () => {
+  it('setMember pulls then pushes — never a whole-array $set — so a role change cannot leave a duplicate row', async () => {
     const model = makeModel();
     const id = new Types.ObjectId();
-    const userIds = [new Types.ObjectId(), new Types.ObjectId()];
-    model.findOne.mockResolvedValue({ _id: id, memberUserIds: userIds });
+    const userId = new Types.ObjectId();
+    model.findOne.mockResolvedValue({ _id: id, members: [{ userId, role: 'editor' }] });
     const repo = new GroupsRepository(model as any, cls as any);
 
-    await repo.addMembers(id, userIds);
+    await repo.setMember(id, userId, 'editor');
 
-    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $addToSet: { memberUserIds: { $each: userIds } } });
+    expect(model.updateOne).toHaveBeenNthCalledWith(1, expect.objectContaining({ _id: id }), { $pull: { members: { userId } } });
+    expect(model.updateOne).toHaveBeenNthCalledWith(2, expect.objectContaining({ _id: id }), { $push: { members: { userId, role: 'editor' } } });
   });
 
-  it('removeMembers uses $pull', async () => {
+  it('removeMembers uses $pull on members.userId', async () => {
     const model = makeModel();
     const id = new Types.ObjectId();
     const userIds = [new Types.ObjectId()];
-    model.findOne.mockResolvedValue({ _id: id, memberUserIds: [] });
+    model.findOne.mockResolvedValue({ _id: id, members: [] });
     const repo = new GroupsRepository(model as any, cls as any);
 
     await repo.removeMembers(id, userIds);
 
-    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $pull: { memberUserIds: { $in: userIds } } });
+    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $pull: { members: { userId: { $in: userIds } } } });
+  });
+
+  it('findOneByName scopes by tenantId in addition to name', () => {
+    const model = makeModel();
+    const repo = new GroupsRepository(model as any, cls as any);
+    repo.findOneByName('Sales');
+    expect(model.findOne).toHaveBeenCalledWith(expect.objectContaining({ tenantId, name: 'Sales' }));
+  });
+
+  it('rename updates the name field and returns the refreshed document', async () => {
+    const model = makeModel();
+    const id = new Types.ObjectId();
+    model.findOne.mockResolvedValue({ _id: id, name: 'New Name' });
+    const repo = new GroupsRepository(model as any, cls as any);
+
+    const result = await repo.rename(id, 'New Name');
+
+    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id }), { $set: { name: 'New Name' } });
+    expect(result).toEqual(expect.objectContaining({ name: 'New Name' }));
   });
 });

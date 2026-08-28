@@ -3,6 +3,7 @@ import * as objectstorage from 'oci-objectstorage';
 import * as common from 'oci-common';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { MIME_TYPES } from './magic-byte-sniff';
 
 export const SIGNED_URL_TTL_MS = 5 * 60_000; // ADR-0006: 5 minutes, issued per click, never stored
 
@@ -14,24 +15,48 @@ export interface SignedDownloadUrl {
 /**
  * Object storage abstraction (ADR-0006). Deliberately minimal — only what
  * the upload path (Phase 2.3), download path (Phase 2.4), and deletion
- * path (Phase 2.5) need; no shared libs/storage package, just this
- * interface, mirroring libs/auth's KmsKeyProvider pattern.
+ * path (Phase 2.5) need. Originally lived only in apps/api; promoted to a
+ * shared package (Phase C, 2026-08-22) once apps/portal-api also needed a
+ * binding for tenant-logo upload — the alternative (duplicating ~300 lines
+ * of multi-cloud provider code per app) was worse than a small new package.
  */
 export interface StorageProvider {
-  putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void>;
+  /**
+   * `disposition` (Phase C, C1.3) defaults to `'attachment'` when omitted — every existing
+   * document-upload call site is unaffected. Only the tenant-logo upload passes `'inline'`, and
+   * only because OCI's pre-authenticated requests fix Content-Disposition at upload time (see
+   * OciStorageProvider's doc comment) — GCS/S3 instead decide this per download, at signing time,
+   * via getSignedDownloadUrl's own `inline` option below.
+   */
+  putObject(key: string, data: Buffer, opts: { contentType: string; disposition?: 'inline' | 'attachment' }): Promise<void>;
 
   /**
-   * V4 signed URL, single object, 5-minute expiry (ADR-0006). Always forces
-   * an attachment download with a generic content-type — the file is never
-   * rendered inline, regardless of what it actually is (sec §4.4).
+   * V4 signed URL, single object, 5-minute expiry (ADR-0006). By default forces an attachment
+   * download with a generic content-type — the file is never rendered inline, regardless of what
+   * it actually is (sec §4.4's XSS-in-untrusted-document-content guard).
+   *
+   * `inline`+`contentType` (Phase C, C1.3) opts out of that for content that was already validated
+   * safe to render at upload time and is *meant* to render inline — currently only the tenant
+   * branding logo (magic-byte-sniffed to PNG/JPEG only, which cannot carry executable content the
+   * way an arbitrary tenant-uploaded document could). Never pass this for document downloads.
+   * On OciStorageProvider specifically, this has no effect — disposition there is fixed by
+   * putObject's own `disposition` at upload time, not toggleable per signed URL; see its doc comment.
    */
-  getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl>;
+  getSignedDownloadUrl(key: string, opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl>;
 
   /** Deletion-verification input (sec §7.3) — never trust a delete succeeded without checking. */
   objectExists(key: string): Promise<boolean>;
 
   /** Idempotent: deleting an already-absent key is not an error (a retried purge must not fail). */
   deleteObject(key: string): Promise<void>;
+
+  /**
+   * Direct server-side byte fetch (document-chat-rag plan §2) — added for the ingestion worker,
+   * which needs the actual file bytes to scan/parse, not a client-facing signed URL. No existing
+   * call site used this before Phase 3; every prior consumer only ever needed
+   * `getSignedDownloadUrl`.
+   */
+  getObject(key: string): Promise<Buffer>;
 }
 
 /**
@@ -54,15 +79,30 @@ export function buildVersionObjectKey(tenantId: string, versionId: string): stri
 }
 
 /**
+ * Tenant-branding logo layout (Phase C, C1.3): `tenants/{tenantId}/logo/{contentHash}.{ext}`.
+ * Content-addressed (not a fixed name) so a re-upload naturally gets a fresh key — the caller
+ * still deletes the previous object explicitly to avoid orphaned storage, this just avoids any
+ * caching/overwrite race on the same key.
+ */
+export function buildTenantLogoObjectKey(tenantId: string, contentHash: string, ext: 'png' | 'jpg'): string {
+  return `tenants/${tenantId}/logo/${contentHash}.${ext}`;
+}
+
+/** Recovers the real content-type from a key built by buildTenantLogoObjectKey — needed to sign an inline-renderable logo URL (Phase C, C1.3). */
+export function inferTenantLogoContentType(objectKey: string): string {
+  return objectKey.endsWith('.jpg') ? MIME_TYPES.jpg : MIME_TYPES.png;
+}
+
+/**
  * Dev/test binding — an in-memory map standing in for the `kms-{env}-data`
  * bucket (ADR-0006). Never durable, never shared across processes; the
  * production binding is GcsStorageProvider once infra/ is applied.
  */
 export class FakeStorageProvider implements StorageProvider {
-  private readonly objects = new Map<string, { data: Buffer; contentType: string }>();
+  private readonly objects = new Map<string, { data: Buffer; contentType: string; disposition: 'inline' | 'attachment' }>();
 
-  async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
-    this.objects.set(key, { data, contentType: opts.contentType });
+  async putObject(key: string, data: Buffer, opts: { contentType: string; disposition?: 'inline' | 'attachment' }): Promise<void> {
+    this.objects.set(key, { data, contentType: opts.contentType, disposition: opts.disposition ?? 'attachment' });
   }
 
   /**
@@ -72,9 +112,14 @@ export class FakeStorageProvider implements StorageProvider {
    * wrong-key bug into an immediate, clear test failure instead of a URL
    * nobody ever notices was dead.
    */
-  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl> {
     if (!this.objects.has(key)) throw new Error(`FakeStorageProvider: no object at key "${key}"`);
-    return { url: `fake://storage/${key}?filename=${encodeURIComponent(opts.displayFilename)}`, expiresAt: new Date(Date.now() + SIGNED_URL_TTL_MS) };
+    const disposition = opts.inline ? 'inline' : 'attachment';
+    const contentType = opts.inline ? opts.contentType ?? 'application/octet-stream' : 'application/octet-stream';
+    return {
+      url: `fake://storage/${key}?filename=${encodeURIComponent(opts.displayFilename)}&disposition=${disposition}&contentType=${encodeURIComponent(contentType)}`,
+      expiresAt: new Date(Date.now() + SIGNED_URL_TTL_MS),
+    };
   }
 
   async objectExists(key: string): Promise<boolean> {
@@ -85,8 +130,14 @@ export class FakeStorageProvider implements StorageProvider {
     this.objects.delete(key);
   }
 
+  async getObject(key: string): Promise<Buffer> {
+    const object = this.objects.get(key);
+    if (!object) throw new Error(`FakeStorageProvider: no object at key "${key}"`);
+    return object.data;
+  }
+
   /** Test-only inspection hook — not part of the StorageProvider contract. */
-  peek(key: string): { data: Buffer; contentType: string } | undefined {
+  peek(key: string): { data: Buffer; contentType: string; disposition: 'inline' | 'attachment' } | undefined {
     return this.objects.get(key);
   }
 }
@@ -105,17 +156,19 @@ export class GcsStorageProvider implements StorageProvider {
   }
 
   async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
+    // disposition is ignored here — GCS decides it per download, at signing time, in getSignedDownloadUrl below.
     await this.bucket.file(key).save(data, { contentType: opts.contentType, resumable: false });
   }
 
-  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl> {
     const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
+    const dispositionType = opts.inline ? 'inline' : 'attachment';
     const [url] = await this.bucket.file(key).getSignedUrl({
       version: 'v4',
       action: 'read',
       expires: expiresAt,
-      responseType: 'application/octet-stream',
-      responseDisposition: `attachment; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
+      responseType: opts.inline ? opts.contentType ?? 'application/octet-stream' : 'application/octet-stream',
+      responseDisposition: `${dispositionType}; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
     });
     return { url, expiresAt };
   }
@@ -127,6 +180,11 @@ export class GcsStorageProvider implements StorageProvider {
 
   async deleteObject(key: string): Promise<void> {
     await this.bucket.file(key).delete({ ignoreNotFound: true });
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const [data] = await this.bucket.file(key).download();
+    return data;
   }
 }
 
@@ -140,17 +198,17 @@ export class GcsStorageProvider implements StorageProvider {
  *
  * Known divergence from GcsStorageProvider, not a bug: GCS's V4 signed URLs accept a
  * `responseDisposition` override *at signing time*, so a fresh Content-Disposition (with the
- * caller-supplied display filename) can be set on every download. OCI pre-authenticated requests
- * (PARs) have no equivalent — Content-Disposition can only be set as object metadata *at upload
- * time* (`putObject`'s `contentDisposition` field) and is then fixed for the object's lifetime. Since
- * `StorageProvider.putObject` doesn't receive a display filename (only `contentType`), this binding
- * sets a generic `attachment` disposition at upload time — that alone still satisfies sec §4.4's
- * "never render inline" requirement, but the caller-supplied `displayFilename` passed to
- * `getSignedDownloadUrl` is accepted for interface compatibility only and has no effect on what
- * filename the browser shows. Threading the real filename through would require extending
- * `StorageProvider.putObject`'s signature — deliberately not done here to avoid changing the shared
- * interface for a binding nothing currently deploys against; revisit if/when OCI becomes the actual
- * production target with a real filename-on-download requirement.
+ * caller-supplied display filename, and — Phase C — inline vs. attachment) can be set on every
+ * download. OCI pre-authenticated requests (PARs) have no equivalent — Content-Disposition can
+ * only be set as object metadata *at upload time* (`putObject`'s `disposition` option) and is then
+ * fixed for the object's lifetime. Two consequences: `getSignedDownloadUrl`'s `inline`/`contentType`
+ * options are no-ops here (whatever `putObject` set at upload time wins for every later download),
+ * and the caller-supplied `displayFilename` passed to `getSignedDownloadUrl` has no effect on what
+ * filename the browser shows, since `StorageProvider.putObject` doesn't receive one either (only
+ * `contentType`/`disposition`). Threading the real filename through would require extending
+ * `StorageProvider.putObject`'s signature again — deliberately not done here to avoid changing the
+ * shared interface for a binding nothing currently deploys against; revisit if/when OCI becomes the
+ * actual production target with a real filename-on-download requirement.
  */
 export class OciStorageProvider implements StorageProvider {
   private readonly client: objectstorage.ObjectStorageClient;
@@ -170,7 +228,7 @@ export class OciStorageProvider implements StorageProvider {
     return new OciStorageProvider(namespace, bucketName, region, provider);
   }
 
-  async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
+  async putObject(key: string, data: Buffer, opts: { contentType: string; disposition?: 'inline' | 'attachment' }): Promise<void> {
     await this.client.putObject({
       namespaceName: this.namespace,
       bucketName: this.bucketName,
@@ -178,13 +236,14 @@ export class OciStorageProvider implements StorageProvider {
       putObjectBody: data,
       contentLength: data.length,
       contentType: opts.contentType,
-      // Generic, filename-less attachment disposition — see class doc comment for why a real
-      // per-download filename can't be threaded through here the way GCS's signed URLs support.
-      contentDisposition: 'attachment',
+      // Generic, filename-less disposition — see class doc comment for why a real per-download
+      // filename can't be threaded through here the way GCS's signed URLs support, and why this
+      // (not getSignedDownloadUrl's inline option) is what actually controls inline vs. attachment on OCI.
+      contentDisposition: opts.disposition ?? 'attachment',
     });
   }
 
-  async getSignedDownloadUrl(key: string, _opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+  async getSignedDownloadUrl(key: string, _opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl> {
     const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
     const response = await this.client.createPreauthenticatedRequest({
       namespaceName: this.namespace,
@@ -222,6 +281,19 @@ export class OciStorageProvider implements StorageProvider {
       throw err;
     }
   }
+
+  async getObject(key: string): Promise<Buffer> {
+    const response = await this.client.getObject({ namespaceName: this.namespace, bucketName: this.bucketName, objectName: key });
+    return streamToBuffer(response.value as unknown as NodeJS.ReadableStream);
+  }
+}
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -259,22 +331,26 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async putObject(key: string, data: Buffer, opts: { contentType: string }): Promise<void> {
+    // disposition is ignored here — S3 decides it per download, at signing time, in getSignedDownloadUrl below.
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: data, ContentType: opts.contentType }),
     );
   }
 
-  async getSignedDownloadUrl(key: string, opts: { displayFilename: string }): Promise<SignedDownloadUrl> {
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl> {
     const expiresAt = new Date(Date.now() + SIGNED_URL_TTL_MS);
+    const dispositionType = opts.inline ? 'inline' : 'attachment';
     const url = await getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucketName,
         Key: key,
-        // Forced at signing time — the file is never rendered inline regardless of its real type
-        // (sec §4.4), and the untrusted display name is RFC 5987-encoded, never interpolated raw.
-        ResponseContentDisposition: `attachment; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
-        ResponseContentType: 'application/octet-stream',
+        // Forced at signing time — by default the file is never rendered inline regardless of its
+        // real type (sec §4.4); `inline` opts a specific, already-validated-safe key out of that
+        // (see the interface doc comment). The untrusted display name is RFC 5987-encoded, never
+        // interpolated raw, either way.
+        ResponseContentDisposition: `${dispositionType}; filename*=${encodeRfc5987Filename(opts.displayFilename)}`,
+        ResponseContentType: opts.inline ? opts.contentType ?? 'application/octet-stream' : 'application/octet-stream',
       }),
       { expiresIn: SIGNED_URL_TTL_MS / 1000 }, // seconds, unlike the ms used everywhere else here
     );
@@ -298,5 +374,10 @@ export class S3StorageProvider implements StorageProvider {
     // S3's DeleteObject is already idempotent — deleting an absent key succeeds — so unlike the GCS
     // and OCI bindings this needs no explicit not-found handling for a retried purge to be safe.
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucketName, Key: key }));
+    return streamToBuffer(response.Body as unknown as NodeJS.ReadableStream);
   }
 }

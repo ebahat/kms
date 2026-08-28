@@ -96,7 +96,7 @@ describe('DocumentsPermissionsService (first real consumer of libs/permissions)'
     const groupId = newObjectId();
     const folder = makeFolder({ grants: [{ principalType: 'group', principalId: groupId, access: 'edit' }] });
     const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
-    const groups = { findForMember: jest.fn().mockResolvedValue([{ _id: groupId }]) };
+    const groups = { findForMember: jest.fn().mockResolvedValue([{ _id: groupId, members: [{ userId, role: 'manager' }] }]) };
     const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
 
     expect(await service.canUploadTo(folder._id.toString())).toBe(true);
@@ -172,6 +172,53 @@ describe('DocumentsPermissionsService (first real consumer of libs/permissions)'
       const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
 
       expect(await service.canManage(folder._id.toString())).toBe(true);
+    });
+  });
+
+  describe('permittedReadFolderIds (chat retrieval pre-filter, document-chat-rag plan)', () => {
+    it('returns every folder id for a tenant admin, without consulting the resolver at all', async () => {
+      setScope('admin');
+      const folderA = makeFolder();
+      const folderB = makeFolder();
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folderA, folderB]) };
+      const groups = { findForMember: jest.fn() };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      const result = await service.permittedReadFolderIds();
+
+      expect(result.sort()).toEqual([folderA._id.toString(), folderB._id.toString()].sort());
+      expect(groups.findForMember).not.toHaveBeenCalled();
+    });
+
+    it('returns only the folders a regular user has read access to', async () => {
+      setScope('user');
+      const readable = makeFolder({ grants: [{ principalType: 'user', principalId: userId, access: 'read' }] });
+      const unreadable = makeFolder({ grants: [] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([readable, unreadable]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      const result = await service.permittedReadFolderIds();
+
+      expect(result).toEqual([readable._id.toString()]);
+    });
+
+    it('returns an empty array (not an error) for a user with no accessible folders at all — the fail-closed input to chat retrieval', async () => {
+      setScope('user');
+      const folder = makeFolder({ grants: [] });
+      const folders = { findAllForTenant: jest.fn().mockResolvedValue([folder]) };
+      const groups = { findForMember: jest.fn().mockResolvedValue([]) };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      expect(await service.permittedReadFolderIds()).toEqual([]);
+    });
+
+    it('throws MissingScopeError with no authenticated scope', async () => {
+      const folders = { findAllForTenant: jest.fn() };
+      const groups = { findForMember: jest.fn() };
+      const service = new DocumentsPermissionsService(cls as any, folders as any, groups as any, cache);
+
+      await expect(service.permittedReadFolderIds()).rejects.toThrow(MissingScopeError);
     });
   });
 });

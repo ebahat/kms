@@ -1,92 +1,128 @@
-* {
-  box-sizing: border-box;
+@import 'tailwindcss';
+
+/**
+ * Design-token system (Phase B, 2026-08-22) — encodes
+ * stitch_automated_document_reviewer/system_wide_stitch_prompt_11_08_2026.md's token system as
+ * Tailwind v4 CSS theme variables, using the exact hex/size values embedded in every one of the
+ * approved per-screen mockups (b1/c1/c2/c3/c4's own inline tailwind.config, all five identical to
+ * each other) rather than the master doc's abstract YAML, which drifted slightly from what was
+ * actually generated and reviewed. RTL is the default layout direction (Hebrew-first) — see
+ * `dir="rtl"` on <html> in app/layout.tsx, not here.
+ */
+@theme {
+  --color-surface: #fcf8ff;
+  --color-surface-dim: #dcd9e0;
+  --color-surface-bright: #fcf8ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f2fa;
+  --color-surface-container: #f0ecf4;
+  --color-surface-container-high: #eae7ef;
+  --color-surface-container-highest: #e5e1e9;
+  --color-on-surface: #1b1b21;
+  --color-on-surface-variant: #474651;
+  --color-inverse-surface: #303036;
+  --color-inverse-on-surface: #f3eff7;
+  --color-outline: #777682;
+  --color-outline-variant: #c8c5d3;
+  --color-surface-tint: #5655a8;
+  --color-primary: #060046;
+  --color-on-primary: #ffffff;
+  /* Phase C, C1.4 — AppShell overrides both this and --color-primary together via inline style
+     when a tenant has a themeColorRgb set, computed from a luminance check so a light custom
+     color never produces illegible white-on-white text. Defaults to --color-on-primary's value
+     for every tenant without a custom theme (unchanged appearance). */
+  --color-on-primary-dynamic: #ffffff;
+  --color-primary-container: #1a146b;
+  --color-on-primary-container: #9c9af4;
+  --color-inverse-primary: #c3c0ff;
+  --color-secondary: #555f6d;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #d9e3f4;
+  --color-on-secondary-container: #5b6573;
+  --color-tertiary: #1e0900;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #5f2b00;
+  --color-on-tertiary-container: #b77e59;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-primary-fixed: #e2dfff;
+  --color-primary-fixed-dim: #c3c0ff;
+  --color-on-primary-fixed: #100563;
+  --color-on-primary-fixed-variant: #3e3c8f;
+  --color-secondary-fixed: #d9e3f4;
+  --color-secondary-fixed-dim: #bdc7d7;
+  --color-on-secondary-fixed: #121c28;
+  --color-on-secondary-fixed-variant: #3e4855;
+  --color-tertiary-fixed: #ffdbc7;
+  --color-tertiary-fixed-dim: #fab88f;
+  --color-on-tertiary-fixed: #311300;
+  --color-on-tertiary-fixed-variant: #683c1c;
+  --color-background: #fcf8ff;
+  --color-on-background: #1b1b21;
+  --color-surface-variant: #e5e1e9;
+
+  --radius-DEFAULT: 0.125rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+
+  --spacing-unit: 4px;
+  --spacing-container-padding: 24px;
+  --spacing-gutter: 16px;
+  --spacing-row-height-dense: 40px;
+  --spacing-row-height-standard: 56px;
+  --spacing-nav-width-expanded: 280px;
+  --spacing-nav-width-collapsed: 64px;
+
+  --font-display-lg: 'Rubik', sans-serif;
+  --font-headline-md: 'Rubik', sans-serif;
+  --font-title-sm: 'Rubik', sans-serif;
+  --font-body-md: 'Rubik', sans-serif;
+  --font-body-sm: 'Rubik', sans-serif;
+  --font-label-xs: 'Rubik', sans-serif;
+  --font-code-sm: 'Courier Prime', monospace;
+
+  --text-display-lg: 30px;
+  --text-display-lg--line-height: 38px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 32px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+  --text-title-sm: 18px;
+  --text-title-sm--line-height: 24px;
+  --text-title-sm--font-weight: 500;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 24px;
+  --text-body-md--font-weight: 400;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+  --text-body-sm--font-weight: 400;
+  --text-label-xs: 12px;
+  --text-label-xs--line-height: 16px;
+  --text-label-xs--letter-spacing: 0.02em;
+  --text-label-xs--font-weight: 500;
+  --text-code-sm: 14px;
+  --text-code-sm--line-height: 20px;
+  --text-code-sm--font-weight: 400;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f7f7f8;
-  color: #1a1a1a;
+  background: var(--color-background);
+  color: var(--color-on-background);
+  font-family: var(--font-body-md);
 }
 
-.auth-shell {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 26rem;
-  background: #fff;
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 2rem;
-}
-
-.auth-card h1 {
-  font-size: 1.25rem;
-  margin: 0 0 1.5rem;
-}
-
-.auth-field {
-  margin-bottom: 1rem;
-}
-
-.auth-field label {
-  display: block;
-  font-size: 0.875rem;
-  margin-bottom: 0.25rem;
-}
-
-.auth-field input {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid #d0d0d5;
-  border-radius: 0.5rem;
-  font-size: 1rem;
-}
-
-.auth-submit {
-  width: 100%;
-  padding: 0.65rem;
-  border: none;
-  border-radius: 0.5rem;
-  background: #1a56db;
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.auth-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.auth-error {
-  background: #fdecec;
-  color: #a12020;
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.75rem;
-  margin-bottom: 1rem;
-  font-size: 0.875rem;
-}
-
-.auth-hint {
-  font-size: 0.8125rem;
-  color: #666;
-  margin-top: 1rem;
-}
-
-.backup-codes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  font-family: monospace;
-  background: #f2f2f4;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  margin: 1rem 0;
+/* Material Symbols default to an unfilled, light weight — fill/weight are set per-icon via
+   inline style (`font-variation-settings`) where the mockups call for it (active nav items,
+   filled folder icons), matching the mockups' own convention rather than a class-based toggle. */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 24px;
+  line-height: 1;
+  user-select: none;
 }

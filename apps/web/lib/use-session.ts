@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tenantApi } from './api';
 
-export type SessionInfo = { role: 'user' | 'admin'; edition: 'kb' | 'ocr' };
+export type SessionInfo = {
+  role: 'user' | 'admin';
+  edition: 'kb' | 'ocr';
+  tenantName: string;
+  logoUrl?: string;
+  themeColorRgb?: string;
+};
 
 /** Same whoami + redirect-on-401 pattern as app/home/page.tsx, extracted since folders/groups screens all need it. */
 export function useSession(): SessionInfo | null {

@@ -1,4 +1,5 @@
 export * from './password';
+export * from './temp-password';
 export * from './session';
 export * from './session.service';
 export * from './totp';
@@ -6,6 +7,7 @@ export * from './backup-codes';
 export * from './kms-envelope';
 export * from './rate-limiter';
 export * from './password-reset';
+export * from './invite';
 export * from './breach-check';
 export * from './login-hardening';
 export * from './captcha';

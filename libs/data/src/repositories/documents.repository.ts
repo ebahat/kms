@@ -41,4 +41,19 @@ export class DocumentsRepository extends ScopedRepository<Document> {
   async setStatus(id: Types.ObjectId, status: DocumentStatus): Promise<void> {
     await this.updateOne({ _id: id }, { $set: { status } });
   }
+
+  async renameDocument(id: Types.ObjectId, name: string): Promise<DocumentDocument | null> {
+    await this.updateOne({ _id: id }, { $set: { name } });
+    return this.findById(id) as unknown as Promise<DocumentDocument | null>;
+  }
+
+  async moveDocument(id: Types.ObjectId, folderId: Types.ObjectId): Promise<DocumentDocument | null> {
+    await this.updateOne({ _id: id }, { $set: { folderId } });
+    return this.findById(id) as unknown as Promise<DocumentDocument | null>;
+  }
+
+  /** Stamped on each download-link issuance — best-effort visibility into "last opened", not a security- or correctness-critical write. */
+  async touchLastOpened(id: Types.ObjectId): Promise<void> {
+    await this.updateOne({ _id: id }, { $set: { lastOpenedAt: new Date() } });
+  }
 }

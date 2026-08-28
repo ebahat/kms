@@ -37,8 +37,22 @@ describe('adapters (@kms/data document -> plain resolver input)', () => {
     expect(toFolderInputs([doc])).toEqual([toFolderInput(doc)]);
   });
 
-  it('toPrincipalSet pairs the user id with their groups member ids', () => {
-    const groups = [{ _id: fakeId('group-1') } as any];
-    expect(toPrincipalSet('user-1', groups)).toEqual({ userId: 'user-1', groupIds: ['group-1'] });
+  it('toPrincipalSet pairs the user id with their role in each group', () => {
+    const groups = [
+      { _id: fakeId('group-1'), members: [{ userId: fakeId('user-1'), role: 'editor' }] } as any,
+      { _id: fakeId('group-2'), members: [{ userId: fakeId('user-1'), role: 'viewer' }, { userId: fakeId('user-2'), role: 'manager' }] } as any,
+    ];
+    expect(toPrincipalSet('user-1', groups)).toEqual({
+      userId: 'user-1',
+      groups: [
+        { groupId: 'group-1', role: 'editor' },
+        { groupId: 'group-2', role: 'viewer' },
+      ],
+    });
+  });
+
+  it('toPrincipalSet ignores other members’ roles and drops a group where the user has no membership row', () => {
+    const groups = [{ _id: fakeId('group-1'), members: [{ userId: fakeId('user-2'), role: 'manager' }] } as any];
+    expect(toPrincipalSet('user-1', groups)).toEqual({ userId: 'user-1', groups: [] });
   });
 });

@@ -35,7 +35,7 @@ describe('GroupsMembershipService', () => {
 
   it('returns true for a user who is a member of the group', async () => {
     setScope('user');
-    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, memberUserIds: [userId] }) };
+    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, members: [{ userId, role: 'viewer' }] }) };
     const service = new GroupsMembershipService(cls as any, groups as any);
 
     expect(await service.isMember(groupId.toString())).toBe(true);
@@ -43,7 +43,7 @@ describe('GroupsMembershipService', () => {
 
   it('returns false for a user who is not a member of the group', async () => {
     setScope('user');
-    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, memberUserIds: [newObjectId()] }) };
+    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, members: [{ userId: newObjectId(), role: 'viewer' }] }) };
     const service = new GroupsMembershipService(cls as any, groups as any);
 
     expect(await service.isMember(groupId.toString())).toBe(false);
@@ -59,7 +59,7 @@ describe('GroupsMembershipService', () => {
 
   it('a tenant admin bypasses membership for a group that exists', async () => {
     setScope('admin');
-    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, memberUserIds: [] }) };
+    const groups = { findById: jest.fn().mockResolvedValue({ _id: groupId, members: [] }) };
     const service = new GroupsMembershipService(cls as any, groups as any);
 
     expect(await service.isMember(groupId.toString())).toBe(true);

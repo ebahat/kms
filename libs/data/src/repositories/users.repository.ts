@@ -29,4 +29,16 @@ export class UsersRepository extends ScopedRepository<User> {
       () => this.model.findOne({ email: email.toLowerCase().trim() }) as Promise<UserDocument | null>,
     );
   }
+
+  /**
+   * In-tenant email lookup (case-insensitive) — a normal tenant-scoped read, NOT a SystemScope
+   * case (unlike `findByEmailForAuth` above): the caller already has a real tenant session, so
+   * `this.scope()` naturally confines this to their own tenant. Powers the "add member by
+   * email"/"grant by email" pickers — before this, `principalId`/`userId` fields required a raw
+   * Mongo ObjectId with no way for an admin/manager to discover one from an email they actually
+   * know (2026-08-28 bug fix).
+   */
+  async findByEmailInTenant(email: string): Promise<UserDocument | null> {
+    return this.model.findOne({ email: email.toLowerCase().trim(), ...this.scope() }) as Promise<UserDocument | null>;
+  }
 }

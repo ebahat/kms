@@ -54,24 +54,29 @@ export default function AdminTotpPage() {
 
   if (needsEnroll && !confirmed) {
     return (
-      <div className="auth-shell">
-        <div className="auth-card">
-          <h1>הפעלת אימות דו-שלבי</h1>
-          {error && <div className="auth-error">{error}</div>}
+      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-8">
+          <h1 className="font-headline-md text-headline-md text-on-surface mb-6">הפעלת אימות דו-שלבי</h1>
+          {error && <div className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</div>}
           {enrollment ? (
             <>
-              <p>סרוק את הקוד באפליקציית האימות שלך, או הזן את המפתח ידנית:</p>
-              {qrDataUrl && <img src={qrDataUrl} alt="QR provisioning code" width={200} height={200} />}
-              <p style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{enrollment.secret}</p>
-              <p className="auth-hint">
+              <p className="font-body-md text-body-md text-on-surface mb-4">סרוק את הקוד באפליקציית האימות שלך, או הזן את המפתח ידנית:</p>
+              {qrDataUrl && (
+                <img src={qrDataUrl} alt="QR provisioning code" width={200} height={200} className="mx-auto mb-4 rounded-DEFAULT border border-outline-variant" />
+              )}
+              <p className="font-code-sm text-code-sm text-on-surface-variant break-all bg-surface-container-low rounded-DEFAULT p-3 mb-4">{enrollment.secret}</p>
+              <p className="font-body-sm text-body-sm text-on-surface-variant mb-4">
                 אין קודי גיבוי במסך זה — איבוד המכשיר מחייב אישור שני-אנשים (בקש ממנהל אחר לאפס).
               </p>
-              <button className="auth-submit" onClick={() => setConfirmed(true)}>
+              <button
+                onClick={() => setConfirmed(true)}
+                className="w-full py-2.5 rounded-DEFAULT bg-primary text-on-primary font-title-sm text-title-sm hover:bg-primary-container hover:text-on-primary-container transition-colors"
+              >
                 המשך
               </button>
             </>
           ) : (
-            <p>טוען...</p>
+            <p className="font-body-md text-body-md text-on-surface-variant">טוען...</p>
           )}
         </div>
       </div>
@@ -79,13 +84,15 @@ export default function AdminTotpPage() {
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <h1>אימות דו-שלבי</h1>
-        {error && <div className="auth-error">{error}</div>}
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+      <div className="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-8">
+        <h1 className="font-headline-md text-headline-md text-on-surface mb-6">אימות דו-שלבי</h1>
+        {error && <div className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</div>}
         <form onSubmit={onSubmit}>
-          <div className="auth-field">
-            <label htmlFor="code">קוד מהאפליקציה</label>
+          <div className="mb-4">
+            <label htmlFor="code" className="block font-label-xs text-label-xs text-on-surface-variant mb-1">
+              קוד מהאפליקציה
+            </label>
             <input
               id="code"
               inputMode="numeric"
@@ -93,9 +100,14 @@ export default function AdminTotpPage() {
               required
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              className="w-full px-3 py-2.5 border border-outline-variant rounded-DEFAULT text-body-md font-body-md text-on-surface bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
             />
           </div>
-          <button className="auth-submit" type="submit" disabled={submitting}>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-2.5 rounded-DEFAULT bg-primary text-on-primary font-title-sm text-title-sm hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
             {submitting ? '...' : 'אימות'}
           </button>
         </form>

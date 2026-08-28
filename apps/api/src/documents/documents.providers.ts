@@ -1,6 +1,6 @@
 import { Provider } from '@nestjs/common';
-import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from './storage/storage-provider';
-import { IngestionQueue, LoggingIngestionQueue } from './ingestion-queue';
+import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from '@kms/storage';
+import { BullMqIngestionQueue, IngestionQueue, LoggingIngestionQueue } from './ingestion-queue';
 
 export const STORAGE_PROVIDER = 'STORAGE_PROVIDER' as const;
 export const INGESTION_QUEUE = 'INGESTION_QUEUE' as const;
@@ -56,9 +56,18 @@ export const storageProviderProvider: Provider = {
   },
 };
 
+/**
+ * `REDIS_QUEUE_HOST` set → a real BullMQ producer, matching `apps/worker`'s consumer (document-chat-rag
+ * plan, Part 1 Task 10). Unset (the default in every existing test and dev-harness run) → the
+ * logging stub, unchanged — no existing behavior shifts unless this env var is explicitly set.
+ */
 export const ingestionQueueProvider: Provider = {
   provide: INGESTION_QUEUE,
-  useClass: LoggingIngestionQueue,
+  useFactory: (): IngestionQueue => {
+    const host = process.env.REDIS_QUEUE_HOST;
+    if (host) return new BullMqIngestionQueue({ host });
+    return new LoggingIngestionQueue();
+  },
 };
 
 export type { StorageProvider, IngestionQueue };

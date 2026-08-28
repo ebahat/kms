@@ -29,3 +29,17 @@ export const TosAcceptRequestSchema = z.object({
   version: z.string().min(1),
 });
 export type TosAcceptRequest = z.infer<typeof TosAcceptRequestSchema>;
+
+/** Invite-activation flow (user-management plan, 2026-08-24) — replaces the one-time temp-password display. */
+export const ActivateCheckRequestSchema = z.object({
+  email: z.string().email(),
+  token: z.string().min(1),
+});
+export type ActivateCheckRequest = z.infer<typeof ActivateCheckRequestSchema>;
+
+export const ActivateConfirmRequestSchema = z.object({
+  email: z.string().email(),
+  token: z.string().min(1),
+  newPassword: z.string().min(12), // same floor as password-reset — one policy, not two
+});
+export type ActivateConfirmRequest = z.infer<typeof ActivateConfirmRequestSchema>;

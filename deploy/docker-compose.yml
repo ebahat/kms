@@ -44,6 +44,16 @@ services:
       OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
       OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
       OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
+      # Password-reset emails link back here (added 2026-08-22, retro action 2) — the API has no
+      # other way to know its own public UI origin. Must match the real app.<domain> hostname or
+      # reset links 404.
+      APP_PUBLIC_URL: https://app.${DOMAIN:?DOMAIN is required (e.g. bahat.co.il)}
+      # RESEND_API_KEY unset here too (like the 4 LLM-provider-key Vault secrets, still
+      # placeholder) — found while wiring this up: every Phase 2A "always-on" invite/assignment
+      # email has been running on FakeNotificationProvider in production this whole time, not
+      # actually sending. Separate gap from this action, flagged not fixed here.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      NOTIFICATION_FROM_ADDRESS: ${NOTIFICATION_FROM_ADDRESS:-noreply@example.com}
     depends_on: [redis-app, redis-queue]
     deploy:
       resources:
@@ -60,6 +70,16 @@ services:
       REDIS_APP_HOST: redis-app
       PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER is required}
       KMS_MASTER_KEY_HEX: ${KMS_MASTER_KEY_HEX:?KMS_MASTER_KEY_HEX is required}
+      # Same bucket as `api` (Phase C, C1.3) — the tenant-logo upload endpoint lives here, but
+      # `api`'s /auth/session is what later signs a download URL for the same object. Found via
+      # live verification: without these, portal-api silently falls back to its own in-process
+      # FakeStorageProvider (storageProviderProvider's factory, apps/portal-api/src/platform-admin/
+      # tenant-storage.providers.ts) — a logo would "upload" successfully but never actually reach
+      # the real bucket `api` reads from, and every tenant's /auth/session call would 500 trying to
+      # sign a URL for an object that was never really written.
+      OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
+      OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
+      OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
     depends_on: [redis-app]
     deploy:
       resources:

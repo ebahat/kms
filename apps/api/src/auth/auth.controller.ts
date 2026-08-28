@@ -6,6 +6,8 @@ import {
   TotpVerifyRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmSchema,
+  ActivateCheckRequestSchema,
+  ActivateConfirmRequestSchema,
   TosAcceptRequestSchema,
   Public,
   MfaExempt,
@@ -29,6 +31,7 @@ import {
   verifyAndFindBackupCode,
   createResetToken,
   isResetTokenValid,
+  isInviteTokenValid,
   isPasswordBreached,
   decideLoginHardening,
   RateLimiter,
@@ -36,9 +39,12 @@ import {
   SecurityAlertSink,
 } from '@kms/auth';
 import { scopeFromIds, SCOPE_CLS_KEY, Scope, TenantsRepository, UsersRepository } from '@kms/data';
+import { inferTenantLogoContentType, StorageProvider } from '@kms/storage';
 import { SESSION_SERVICE } from './session-auth.guard';
 import { setSessionCookie, clearSessionCookie } from './cookie';
 import { PASSWORD_PEPPER, KMS_KEY_PROVIDER, RATE_LIMITER, CAPTCHA_VERIFIER, SECURITY_ALERT_SINK } from './auth.providers';
+import { NOTIFICATION_PROVIDER, NotificationProvider } from '../notifications/notifications.providers';
+import { STORAGE_PROVIDER } from '../documents/documents.providers';
 
 const LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60;
 const TOTP_RATE_WINDOW_SECONDS = 5 * 60;
@@ -63,6 +69,8 @@ export class AuthController {
     @Inject(RATE_LIMITER) private readonly rateLimiter: RateLimiter,
     @Inject(CAPTCHA_VERIFIER) private readonly captcha: CaptchaVerifier,
     @Inject(SECURITY_ALERT_SINK) private readonly alerts: SecurityAlertSink,
+    @Inject(NOTIFICATION_PROVIDER) private readonly notifications: NotificationProvider,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   @Public()
@@ -217,12 +225,23 @@ export class AuthController {
     const { email } = PasswordResetRequestSchema.parse(body);
     const user = await this.users.findByEmailForAuth(email);
 
-    if (user && user.status !== 'inactive') {
-      const { tokenHash, expiresAt } = createResetToken();
+    // status === 'active' only (not merely "!== 'inactive'") — a 'pending' user has never
+    // activated their invite yet; handing them a *reset* link here would let them set a password
+    // without ever consuming the invite token, bypassing activation entirely (user-management
+    // plan, 2026-08-24). They get a working link via resend-invite instead.
+    if (user && user.status === 'active') {
+      const { rawToken, tokenHash, expiresAt } = createResetToken();
       this.setUserScope(user._id, user.tenantId, user.role);
       await this.users.updateOne({ _id: user._id }, { $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt } });
-      // Real delivery pending a transactional email provider decision (PRD §6) — the raw token
-      // goes only in that email's link, never logged or returned here.
+      // ADR-0013's provider now exists (previously blocked on this) — the raw token goes only in
+      // this email's link, never logged or returned from this endpoint itself (sec §2).
+      const appUrl = process.env.APP_PUBLIC_URL ?? 'http://localhost:3010';
+      const resetLink = `${appUrl}/password-reset/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`;
+      await this.notifications.sendEmail({
+        to: email,
+        subject: 'איפוס סיסמה',
+        body: `לאיפוס הסיסמה שלך, לחץ/י על הקישור הבא (בתוקף לזמן מוגבל): ${resetLink}`,
+      });
     }
 
     return { ok: true }; // identical response whether or not the email exists (enumeration resistance, sec §2)
@@ -253,12 +272,81 @@ export class AuthController {
     return { ok: true };
   }
 
+  /**
+   * Lets the /activate screen tell "this link is expired/wrong" apart from "not yet submitted" —
+   * checked before the user types a password, not after (user-management plan, 2026-08-24). No
+   * user data in the response, just a boolean: the token itself already implies enumeration is
+   * bounded to whoever received the invite email.
+   */
+  @Public()
+  @Post('activate/check')
+  @HttpCode(200)
+  async checkActivationToken(@Body() body: unknown) {
+    const { email, token } = ActivateCheckRequestSchema.parse(body);
+    const user = await this.users.findByEmailForAuth(email);
+    return { valid: !!user && user.status === 'pending' && isInviteTokenValid(token, user.inviteTokenHash, user.inviteExpiresAt) };
+  }
+
+  @Public()
+  @Post('activate/confirm')
+  @HttpCode(200)
+  async confirmActivation(@Body() body: unknown) {
+    const { email, token, newPassword } = ActivateConfirmRequestSchema.parse(body);
+    const user = await this.users.findByEmailForAuth(email);
+
+    if (!user || user.status !== 'pending' || !isInviteTokenValid(token, user.inviteTokenHash, user.inviteExpiresAt)) {
+      throw new UnauthorizedException({ error: 'INVALID_OR_EXPIRED_TOKEN' });
+    }
+    if (await isPasswordBreached(newPassword)) {
+      throw new BadRequestException({ error: 'PASSWORD_BREACHED' });
+    }
+
+    const passwordHash = await hashPassword(newPassword, this.pepper);
+    this.setUserScope(user._id, user.tenantId, user.role);
+    await this.users.updateOne(
+      { _id: user._id },
+      { $set: { passwordHash, status: 'active', activatedAt: new Date() }, $unset: { inviteTokenHash: '', inviteExpiresAt: '' } },
+    );
+
+    return { ok: true };
+  }
+
   /** Minimal "whoami" — drives edition/role-based navigation client-side (UI spec). Gated normally: fully authenticated only. */
   @Get('session')
   async getSession() {
     const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
     if (!scope) throw new UnauthorizedException();
-    return { role: scope.role, edition: scope.edition };
+    // tenantName drives the app-shell header (Phase B, 2026-08-22) — real data, not a placeholder.
+    const tenant = await this.tenants.findById(scope.tenantId);
+
+    // logoUrl (Phase C, C1.3): issued fresh per session load, never stored — preserves the
+    // "files served only via short-lived signed URLs" security invariant even for branding assets
+    // that aren't confidential. One extra signed-URL issuance per session load, not per page.
+    // Signing failure degrades to "no logo," not a broken session: this endpoint is the whoami
+    // every authenticated page load depends on, so a missing/unreachable object must never take
+    // down login for an entire tenant over what's ultimately cosmetic branding (found via live
+    // verification: a storage-layer hiccup here previously 500'd every session check).
+    let logoUrl: string | undefined;
+    if (tenant?.logoObjectKey) {
+      try {
+        const signed = await this.storage.getSignedDownloadUrl(tenant.logoObjectKey, {
+          displayFilename: 'logo',
+          inline: true,
+          contentType: inferTenantLogoContentType(tenant.logoObjectKey),
+        });
+        logoUrl = signed.url;
+      } catch {
+        logoUrl = undefined;
+      }
+    }
+
+    return {
+      role: scope.role,
+      edition: scope.edition,
+      tenantName: tenant?.name ?? '',
+      logoUrl,
+      themeColorRgb: tenant?.themeColorRgb,
+    };
   }
 
   @MfaExempt()

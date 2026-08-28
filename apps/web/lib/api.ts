@@ -57,11 +57,27 @@ export const tenantApi = {
   post: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
   patch: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
   del: <T>(path: string, data?: unknown) => request<T>(API_BASE, path, { method: 'DELETE', body: data ? JSON.stringify(data) : undefined }),
+  postForm: <T>(path: string, form: FormData) => requestForm<T>(API_BASE, path, form),
 };
+
+/**
+ * Multipart POST — deliberately bypasses request()'s JSON Content-Type header (the browser sets
+ * its own `multipart/form-data; boundary=...` for a FormData body; overriding it manually breaks
+ * the boundary). Used only by the superuser tenant-logo upload (Phase C, C1.5) so far.
+ */
+async function requestForm<T>(base: string, path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${base}${path}`, { method: 'POST', credentials: 'include', body: form });
+  const body = res.status === 204 ? undefined : await res.json().catch(() => undefined);
+  if (!res.ok) throw new ApiError(res.status, body);
+  return body as T;
+}
 
 /** Platform-admin realm (apps/portal-api) — the admin-hostname UI area (ADR-0004). */
 export const portalApi = {
   get: <T>(path: string) => request<T>(PORTAL_API_BASE, path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) =>
     request<T>(PORTAL_API_BASE, path, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
+  patch: <T>(path: string, data?: unknown) =>
+    request<T>(PORTAL_API_BASE, path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
+  postForm: <T>(path: string, form: FormData) => requestForm<T>(PORTAL_API_BASE, path, form),
 };

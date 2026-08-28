@@ -33,6 +33,13 @@ export class Document {
 
   /** Populated by `timestamps: true` below, not a real `@Prop` path — declared here purely so callers get a typed field. */
   createdAt!: Date;
+
+  /** Also populated by `timestamps: true` — bumped by Mongoose on every write (rename, move, setLatestVersion), so "last update" needs no new tracking, only exposing. */
+  updatedAt!: Date;
+
+  /** Stamped on each signed-download-URL issuance (the closest thing this app has to "viewing" a file — no in-app preview exists). Absent until the first download. */
+  @Prop()
+  lastOpenedAt?: Date;
 }
 
 export type DocumentDocument = HydratedDocument<Document> & { _id: Types.ObjectId };

@@ -8,16 +8,26 @@ function sha256(input: string): string {
   return createHash('sha256').update(input, 'utf8').digest('hex');
 }
 
-/** 128-bit single-use token; only the SHA-256 hash is persisted (sec §2) — the raw value goes in the email link only. */
-export function createResetToken(): PasswordResetToken {
+/**
+ * 128-bit single-use token; only the SHA-256 hash is persisted (sec §2) — the raw value goes in
+ * the email link only. Generic over TTL so invite.ts's 24h invite token can share this exact
+ * generation/validation logic without duplicating it (user-management plan, 2026-08-24).
+ */
+export function createToken(ttlMs: number): PasswordResetToken {
   const rawToken = randomBytes(16).toString('base64url');
-  return { rawToken, tokenHash: sha256(rawToken), expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS) };
+  return { rawToken, tokenHash: sha256(rawToken), expiresAt: new Date(Date.now() + ttlMs) };
 }
 
-export function isResetTokenValid(rawToken: string, storedHash: string | undefined, expiresAt: Date | undefined): boolean {
+export function createResetToken(): PasswordResetToken {
+  return createToken(RESET_TOKEN_TTL_MS);
+}
+
+export function isTokenValid(rawToken: string, storedHash: string | undefined, expiresAt: Date | undefined): boolean {
   if (!storedHash || !expiresAt) return false;
   if (Date.now() > expiresAt.getTime()) return false;
   const candidate = Buffer.from(sha256(rawToken), 'hex');
   const stored = Buffer.from(storedHash, 'hex');
   return candidate.length === stored.length && timingSafeEqual(candidate, stored);
 }
+
+export const isResetTokenValid = isTokenValid;

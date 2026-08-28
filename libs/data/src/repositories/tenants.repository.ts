@@ -22,6 +22,11 @@ export class TenantsRepository {
     return this.model.findOne({ _id: id }) as Promise<TenantDocument | null>;
   }
 
+  /** Phase C — subdomain routing/uniqueness lookups (C1.2 provisioning, C2.4 hostname resolution). */
+  findBySubdomain(subdomain: string) {
+    return this.model.findOne({ subdomain }) as Promise<TenantDocument | null>;
+  }
+
   create(doc: Omit<Tenant, 'status'> & { status?: Tenant['status'] }) {
     return this.model.create(doc);
   }
@@ -33,5 +38,10 @@ export class TenantsRepository {
   /** Tenant lifecycle: suspend/reactivate (PRD §5). */
   setStatus(id: Types.ObjectId, status: Tenant['status']) {
     return this.model.updateOne({ _id: id }, { $set: { status } });
+  }
+
+  /** Compensating-delete for provisioning rollback (Phase C, C1.2) — a tenant must never be left without its admin. */
+  deleteById(id: Types.ObjectId) {
+    return this.model.deleteOne({ _id: id });
   }
 }

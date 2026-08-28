@@ -36,6 +36,10 @@ export async function buildTestApp(opts: { corsOrigin?: string } = {}): Promise<
   process.env.PASSWORD_PEPPER = TEST_PASSWORD_PEPPER;
   delete process.env.GCS_DATA_BUCKET; // keep storageProviderProvider on FakeStorageProvider
   delete process.env.RESEND_API_KEY; // keep notificationProviderProvider on FakeNotificationProvider
+  delete process.env.VERTEX_PROJECT_ID; // keep chat's embedding/chat providers on Fake
+  delete process.env.ANTHROPIC_API_KEY; // keep chat's chat provider on Fake (no Claude fallback)
+  delete process.env.ATLAS_VECTOR_SEARCH; // keep chat's retrieval provider on FakeRetrievalProvider
+  delete process.env.CLAMD_HOST; // keep the (unused by apps/api directly, but shares the pattern) scan provider on Fake
 
   const { AppModule } = await import('../../src/app.module');
   const { REDIS_APP_CLIENT } = await import('../../src/redis.provider');

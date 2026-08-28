@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ApiError, apiErrorMessage } from '../../lib/api';
+import { AppShell } from '../../components/app-shell';
+import { apiErrorMessage } from '../../lib/api';
 import { FolderSummary, foldersApi } from '../../lib/folders-api';
 import { useSession } from '../../lib/use-session';
 
@@ -38,44 +39,68 @@ export default function FoldersRootPage() {
     }
   }
 
-  if (!session) return <main style={{ padding: '2rem' }}>טוען...</main>;
+  if (!session) return <div className="min-h-screen bg-background" />;
 
   return (
-    <main style={{ padding: '2rem' }}>
-      <nav style={{ marginBottom: '1rem' }}>
-        <Link href="/home">בית</Link>
-      </nav>
-      <h1>תיקיות</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-
-      {session.role === 'admin' && (
-        <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="שם תיקיית שורש חדשה" />
-          <button onClick={onCreate} disabled={creating || !newName.trim()}>
-            צור תיקייה
-          </button>
+    <AppShell session={session} active="folders">
+      <div className="flex justify-between items-end pb-4 border-b border-outline-variant mb-6">
+        <div>
+          <h2 className="font-display-lg text-display-lg text-on-surface">תיקיות</h2>
         </div>
-      )}
+        {session.role === 'admin' && (
+          <div className="flex gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="שם תיקיית שורש חדשה"
+              className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={onCreate}
+              disabled={creating || !newName.trim()}
+              className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              צור תיקייה
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</p>}
 
       {folders === null ? (
-        <p>טוען...</p>
+        <p className="font-body-md text-body-md text-on-surface-variant">טוען...</p>
       ) : folders.length === 0 ? (
-        <p>אין תיקיות זמינות.</p>
+        <p className="font-body-md text-body-md text-on-surface-variant">אין תיקיות זמינות.</p>
       ) : (
-        <ul>
+        <div className="bg-surface-container-lowest rounded-lg border border-outline-variant divide-y divide-outline-variant overflow-hidden shadow-sm">
           {folders.map((f) => (
-            <li key={f.id}>
-              <Link href={`/folders/${f.id}`}>{f.name}</Link>
-              {f.isPublic && <span style={{ marginInlineStart: '0.5rem' }}>(ציבורי)</span>}
+            <Link
+              key={f.id}
+              href={`/folders/${f.id}`}
+              className="flex items-center gap-3 px-4 h-row-height-standard hover:bg-surface-container-high transition-colors"
+            >
+              <span className="material-symbols-outlined text-tertiary-container" style={{ fontVariationSettings: "'FILL' 1" }}>
+                folder
+              </span>
+              <span className="font-body-md text-body-md text-on-surface">{f.name}</span>
+              {f.isPublic && (
+                <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">ציבורי</span>
+              )}
               {f.broaderThanParent && (
-                <span title={f.addedGroups.join(', ')} style={{ marginInlineStart: '0.5rem', color: 'darkorange' }}>
-                  ⚠ הרשאות מורחבות
+                <span
+                  title={f.addedGroups.join(', ')}
+                  className="font-label-xs text-label-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-full flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[14px]">warning</span>
+                  הרשאות מורחבות
                 </span>
               )}
-            </li>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
-    </main>
+    </AppShell>
   );
 }

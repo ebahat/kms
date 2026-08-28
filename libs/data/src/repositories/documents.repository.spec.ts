@@ -98,4 +98,42 @@ describe('DocumentsRepository', () => {
 
     expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id, tenantId }), { $set: { status: 'failed' } });
   });
+
+  it('renameDocument updates the name field and returns the refreshed document', async () => {
+    const model = makeModel();
+    model.updateOne.mockResolvedValue({});
+    const id = new Types.ObjectId();
+    model.findOne.mockResolvedValue({ _id: id, name: 'New Name.pdf' });
+    const repo = new DocumentsRepository(model as any, cls as any);
+
+    const result = await repo.renameDocument(id, 'New Name.pdf');
+
+    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id, tenantId }), { $set: { name: 'New Name.pdf' } });
+    expect(result).toEqual(expect.objectContaining({ name: 'New Name.pdf' }));
+  });
+
+  it('moveDocument updates the folderId field and returns the refreshed document', async () => {
+    const model = makeModel();
+    model.updateOne.mockResolvedValue({});
+    const id = new Types.ObjectId();
+    const newFolderId = new Types.ObjectId();
+    model.findOne.mockResolvedValue({ _id: id, folderId: newFolderId });
+    const repo = new DocumentsRepository(model as any, cls as any);
+
+    const result = await repo.moveDocument(id, newFolderId);
+
+    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id, tenantId }), { $set: { folderId: newFolderId } });
+    expect(result).toEqual(expect.objectContaining({ folderId: newFolderId }));
+  });
+
+  it('touchLastOpened sets lastOpenedAt to a fresh Date', async () => {
+    const model = makeModel();
+    model.updateOne.mockResolvedValue({});
+    const id = new Types.ObjectId();
+    const repo = new DocumentsRepository(model as any, cls as any);
+
+    await repo.touchLastOpened(id);
+
+    expect(model.updateOne).toHaveBeenCalledWith(expect.objectContaining({ _id: id, tenantId }), { $set: { lastOpenedAt: expect.any(Date) } });
+  });
 });

@@ -68,7 +68,7 @@ describe('resolveFolderPermissionsCached (get-or-compute-and-cache)', () => {
   let redis: InstanceType<typeof RedisMock>;
   let cache: PermissionCache;
   const folders: FolderInput[] = [{ id: 'f1', parentId: null, grants: [], hasExplicitGrants: true, isPublic: true }];
-  const principals = { userId: 'user-1', groupIds: [] };
+  const principals = { userId: 'user-1', groups: [] };
 
   beforeEach(async () => {
     // ioredis-mock instances share one global in-memory store by default (mirroring

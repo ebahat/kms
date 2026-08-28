@@ -1,6 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CreateGroupRequestSchema, Edition, UpdateGroupMembersRequestSchema } from '@kms/contracts';
+import { CreateGroupRequestSchema, Edition, UpdateGroupMembersRequestSchema, UpdateGroupRequestSchema } from '@kms/contracts';
 import {
   AuditEventsRepository,
   EventsRepository,
@@ -67,19 +67,48 @@ export class GroupsController {
   async create(@Body() body: unknown) {
     const { name } = CreateGroupRequestSchema.parse(body);
     const scope = this.currentScope();
+
+    const existing = await this.groups.findOneByName(name);
+    if (existing) throw new ConflictException({ error: 'GROUP_NAME_TAKEN', message: 'קבוצה בשם זה כבר קיימת.' });
+
     const created = await this.groups.createGroup(name);
     await this.auditEvents.record({ action: 'group.created', targetId: created._id, metadata: { name } });
     return this.toSummary(created, scope);
   }
 
+  /** Rename — same uniqueness discipline as create (excluding the group's own current name/id). */
+  @Patch(':id')
+  @UseGuards(AdminOnlyGuard)
+  async rename(@Param('id') id: string, @Body() body: unknown) {
+    const { name } = UpdateGroupRequestSchema.parse(body);
+    if (!OBJECT_ID_RE.test(id)) throw new NotFoundException();
+
+    const existing = await this.groups.findById(toObjectId(id));
+    if (!existing) throw new NotFoundException();
+
+    const conflict = await this.groups.findOneByName(name);
+    if (conflict && !conflict._id.equals(existing._id)) {
+      throw new ConflictException({ error: 'GROUP_NAME_TAKEN', message: 'קבוצה בשם זה כבר קיימת.' });
+    }
+
+    const updated = await this.groups.rename(toObjectId(id), name);
+    await this.auditEvents.record({ action: 'group.renamed', targetId: toObjectId(id), metadata: { name } });
+    return this.toSummary(updated as unknown as GroupDocument, this.currentScope());
+  }
+
   /**
    * Group membership feeds ADR-0005's principal set (a user's effective
-   * folder access depends on which groups they belong to), so an add/remove
-   * here needs the same permVersion bump + audit discipline as a folder
-   * grant change (Task 5) — easy to miss because it lives in a different
-   * controller. `remove` runs before `add`: if the same id appears in both
-   * (a malformed/pathological request, not a designed case), the net effect
-   * is "added" — an explicit re-add is treated as the caller's real intent.
+   * folder access depends on which groups they belong to, and — since the
+   * 2026-08-24 per-group-role plan — on the role they hold within it), so an
+   * add/remove/role-change here needs the same permVersion bump + audit
+   * discipline as a folder grant change (Task 5) — easy to miss because it
+   * lives in a different controller. `remove` runs before `add`: if the same
+   * id appears in both (a malformed/pathological request, not a designed
+   * case), the net effect is "added with the given role" — an explicit
+   * re-add is treated as the caller's real intent. `add` also doubles as
+   * "change this member's role" — GroupsRepository.setMember() is a
+   * pull-then-push, so re-adding an existing member with a different role
+   * updates it in place rather than creating a duplicate row.
    */
   @Patch(':id/members')
   @UseGuards(AdminOnlyGuard)
@@ -92,7 +121,7 @@ export class GroupsController {
     if (!existing) throw new NotFoundException();
 
     if (remove.length > 0) await this.groups.removeMembers(toObjectId(id), remove.map(toObjectId));
-    if (add.length > 0) await this.groups.addMembers(toObjectId(id), add.map(toObjectId));
+    for (const { userId, role } of add) await this.groups.setMember(toObjectId(id), toObjectId(userId), role);
 
     const updated = await this.groups.findById(toObjectId(id));
     await this.bumpVersionAndAudit(id, 'group.members.updated', { add, remove });
@@ -152,15 +181,15 @@ export class GroupsController {
   }
 
   /**
-   * memberUserIds is membership data, not just "the group exists" data (e.g. it reveals exactly
-   * who is in an "Executives" or "Legal" group) — withheld from a caller who is neither a tenant
-   * admin nor a member of this specific group, same withholding pattern as
+   * members is membership data, not just "the group exists" data (e.g. it reveals exactly who is
+   * in an "Executives" or "Legal" group, and now their role within it) — withheld from a caller who
+   * is neither a tenant admin nor a member of this specific group, same withholding pattern as
    * FoldersController.detail()'s grants array below manage tier.
    */
   private toSummary(group: GroupDocument, scope: Scope) {
     const base = { id: group._id.toString(), name: group.name };
-    const isMember = group.memberUserIds.some((id) => id.equals(scope.userId));
+    const isMember = group.members.some((m) => m.userId.equals(scope.userId));
     if (scope.role !== 'admin' && !isMember) return base;
-    return { ...base, memberUserIds: group.memberUserIds.map((id) => id.toString()) };
+    return { ...base, members: group.members.map((m) => ({ userId: m.userId.toString(), role: m.role })) };
   }
 }

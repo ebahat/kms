@@ -3,15 +3,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { AppShell } from '../../../components/app-shell';
+import { FolderPicker } from '../../../components/folder-picker';
 import { ApiError, apiErrorMessage } from '../../../lib/api';
 import { DocumentSummary, FolderDetail, FolderSummary, foldersApi } from '../../../lib/folders-api';
 import { useSession } from '../../../lib/use-session';
+
+const STATUS_LABEL: Record<DocumentSummary['status'], string> = { queued: 'ממתין', processing: 'בעיבוד', indexed: 'מאונדקס', failed: 'נכשל' };
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+function formatDate(iso: string | undefined): string {
+  if (!iso) return 'מעולם לא';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Which item a "move to" picker session is targeting — the current folder itself, one of its subfolders, or one of its documents. */
+type MoveTarget = { kind: 'currentFolder' } | { kind: 'subfolder'; id: string; name: string } | { kind: 'document'; id: string; name: string };
 
 /**
  * UI spec B2's folder-tree portion, one folder deep: breadcrumb, subfolders, document list with a
@@ -37,6 +51,12 @@ export default function FolderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  const [renamingSubfolderId, setRenamingSubfolderId] = useState<string | null>(null);
+  const [subfolderRenameValue, setSubfolderRenameValue] = useState('');
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null);
+  const [documentRenameValue, setDocumentRenameValue] = useState('');
 
   const load = useCallback(async () => {
     setNotFound(false);
@@ -87,16 +107,44 @@ export default function FolderDetailPage() {
     }
   }
 
-  async function onMove() {
-    const target = window.prompt('מזהה תיקיית היעד (או השאירו ריק להעברה לשורש) — שים לב: ההעברה תחיל את הרשאות היעד על התיקייה:');
-    if (target === null) return;
+  /** Dispatches to the right API call based on what the open picker is moving — the current folder, one of its subfolders, or one of its documents. */
+  async function onConfirmMove(destinationFolderId: string) {
+    if (!moveTarget) return;
+    if (moveTarget.kind === 'currentFolder') {
+      await foldersApi.move(folderId, destinationFolderId);
+    } else if (moveTarget.kind === 'subfolder') {
+      await foldersApi.move(moveTarget.id, destinationFolderId);
+    } else {
+      await foldersApi.moveDocument(moveTarget.id, destinationFolderId);
+    }
+    await load();
+  }
+
+  async function onRenameSubfolder(id: string) {
+    if (!subfolderRenameValue.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await foldersApi.move(folderId, target.trim() || null);
+      await foldersApi.rename(id, subfolderRenameValue.trim());
+      setRenamingSubfolderId(null);
       await load();
     } catch (e) {
-      setError(apiErrorMessage(e, 'ההעברה נכשלה'));
+      setError(apiErrorMessage(e, 'שינוי השם נכשל'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRenameDocument(id: string) {
+    if (!documentRenameValue.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await foldersApi.renameDocument(id, documentRenameValue.trim());
+      setRenamingDocumentId(null);
+      await load();
+    } catch (e) {
+      setError(apiErrorMessage(e, 'שינוי השם נכשל'));
     } finally {
       setBusy(false);
     }
@@ -123,6 +171,20 @@ export default function FolderDetailPage() {
     }
   }
 
+  /** Uploads immediately on file selection — same single-step pattern as the CSV import on /users, no separate "confirm" step. */
+  async function onUpload(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      await foldersApi.uploadDocument(folderId, file);
+      await load();
+    } catch (e) {
+      setError(apiErrorMessage(e, 'העלאת הקובץ נכשלה'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function onDelete() {
     if (!window.confirm('למחוק את התיקייה? הפעולה אפשרית רק כשהתיקייה ריקה.')) return;
     setBusy(true);
@@ -136,124 +198,367 @@ export default function FolderDetailPage() {
     }
   }
 
-  if (!session) return <main style={{ padding: '2rem' }}>טוען...</main>;
+  if (!session) return <div className="min-h-screen bg-background" />;
   if (notFound) {
     return (
-      <main style={{ padding: '2rem' }}>
-        <p>התיקייה לא נמצאה, או שאין לך הרשאה לצפות בה.</p>
-        <Link href="/folders">חזרה לתיקיות</Link>
-      </main>
+      <AppShell session={session} active="folders">
+        <p className="font-body-md text-body-md text-on-surface mb-4">התיקייה לא נמצאה, או שאין לך הרשאה לצפות בה.</p>
+        <Link href="/folders" className="text-primary hover:underline">
+          חזרה לתיקיות
+        </Link>
+      </AppShell>
     );
   }
-  if (!folder || !children || !documents) return <main style={{ padding: '2rem' }}>טוען...</main>;
+  if (!folder || !children || !documents) {
+    return (
+      <AppShell session={session} active="folders">
+        <p className="font-body-md text-body-md text-on-surface-variant">טוען...</p>
+      </AppShell>
+    );
+  }
 
   const canEdit = folder.tier === 'edit' || folder.tier === 'manage';
   const canManage = folder.tier === 'manage';
 
   return (
-    <main style={{ padding: '2rem' }}>
-      <nav style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <Link href="/folders">תיקיות</Link>
+    <AppShell session={session} active="folders">
+      <nav className="mb-4 flex flex-wrap gap-1 font-body-sm text-body-sm text-on-surface-variant">
+        <Link href="/folders" className="hover:text-primary">
+          תיקיות
+        </Link>
         {folder.path.map((ancestor) => (
           <span key={ancestor.id}>
             {' / '}
-            <Link href={`/folders/${ancestor.id}`}>{ancestor.name}</Link>
+            <Link href={`/folders/${ancestor.id}`} className="hover:text-primary">
+              {ancestor.name}
+            </Link>
           </span>
         ))}
         {' / '}
-        <span>{folder.name}</span>
+        <span className="text-on-surface">{folder.name}</span>
       </nav>
 
-      <h1>
-        {folder.name}
-        {folder.isPublic && <span style={{ marginInlineStart: '0.5rem', fontSize: '0.9rem' }}>(ציבורי)</span>}
+      <div className="flex items-center gap-2 mb-1">
+        <h1 className="font-headline-md text-headline-md text-on-surface">{folder.name}</h1>
+        {folder.isPublic && (
+          <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">ציבורי</span>
+        )}
         {folder.broaderThanParent && (
-          <span title={folder.addedGroups.join(', ')} style={{ marginInlineStart: '0.5rem', fontSize: '0.9rem', color: 'darkorange' }}>
-            ⚠ הרשאות מורחבות ביחס לתיקיית האב
+          <span
+            title={folder.addedGroups.join(', ')}
+            className="font-label-xs text-label-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-full flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[14px]">warning</span>
+            הרשאות מורחבות ביחס לתיקיית האב
           </span>
         )}
-      </h1>
+      </div>
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 my-4 font-body-sm text-body-sm">{error}</p>}
       {downloadNotice && (
-        <p role="status" style={{ color: '#555', background: '#f3f3f3', padding: '0.5rem 0.75rem', borderRadius: '4px' }}>
+        <p role="status" className="bg-surface-container-high text-on-surface rounded-DEFAULT px-3 py-2.5 my-4 font-body-sm text-body-sm">
           {downloadNotice}
         </p>
       )}
 
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
+      <div className="flex gap-2 flex-wrap my-4">
         {canManage && (
           <>
             {renaming ? (
               <>
-                <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
-                <button onClick={onRename} disabled={busy}>
+                <input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  className="px-3 py-1.5 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  onClick={onRename}
+                  disabled={busy}
+                  className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-primary-container hover:text-on-primary-container transition-colors"
+                >
                   שמור
                 </button>
-                <button onClick={() => setRenaming(false)} disabled={busy}>
+                <button
+                  onClick={() => setRenaming(false)}
+                  disabled={busy}
+                  className="border border-outline-variant text-on-surface font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-surface-container-high transition-colors"
+                >
                   ביטול
                 </button>
               </>
             ) : (
-              <button onClick={() => setRenaming(true)} disabled={busy}>
+              <button
+                onClick={() => setRenaming(true)}
+                disabled={busy}
+                className="border border-outline-variant text-on-surface font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-surface-container-high transition-colors"
+              >
                 שנה שם
               </button>
             )}
-            <button onClick={onMove} disabled={busy}>
+            <button
+              onClick={() => setMoveTarget({ kind: 'currentFolder' })}
+              disabled={busy}
+              className="border border-outline-variant text-on-surface font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-surface-container-high transition-colors"
+            >
               העבר
             </button>
-            <button onClick={onDelete} disabled={busy}>
+            <button
+              onClick={onDelete}
+              disabled={busy}
+              className="border border-outline-variant text-error font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-error-container transition-colors"
+            >
               מחק
             </button>
-            <Link href={`/folders/${folderId}/permissions`}>ניהול הרשאות</Link>
+            <Link
+              href={`/folders/${folderId}/permissions`}
+              className="border border-outline-variant text-on-surface font-title-sm text-title-sm px-4 py-1.5 rounded-DEFAULT hover:bg-surface-container-high transition-colors flex items-center"
+            >
+              ניהול הרשאות
+            </Link>
           </>
         )}
       </div>
 
       {canEdit && (
-        <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="שם תת-תיקייה חדשה" />
-          <button onClick={onCreateSubfolder} disabled={busy || !newName.trim()}>
+        <div className="flex gap-2 my-4 flex-wrap">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="שם תת-תיקייה חדשה"
+            className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+          <button
+            onClick={onCreateSubfolder}
+            disabled={busy || !newName.trim()}
+            className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
             צור תת-תיקייה
           </button>
+          <label
+            className={`border border-outline-variant text-on-surface font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-surface-container-high transition-colors cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
+          >
+            <span className="material-symbols-outlined text-sm">upload_file</span>
+            {uploading ? 'מעלה...' : 'העלה קובץ'}
+            <input
+              type="file"
+              accept="application/pdf,.docx,.doc,image/jpeg,image/png,.jpg,.jpeg,.png"
+              disabled={uploading}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void onUpload(file);
+                e.target.value = '';
+              }}
+            />
+          </label>
         </div>
       )}
 
-      <h2>תתי-תיקיות</h2>
+      <h2 className="font-title-sm text-title-sm text-on-surface mt-6 mb-2">תתי-תיקיות</h2>
       {children.length === 0 ? (
-        <p>אין תתי-תיקיות.</p>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">אין תתי-תיקיות.</p>
       ) : (
-        <ul>
+        <div className="bg-surface-container-lowest rounded-lg border border-outline-variant divide-y divide-outline-variant overflow-hidden shadow-sm mb-6">
           {children.map((f) => (
-            <li key={f.id}>
-              <Link href={`/folders/${f.id}`}>{f.name}</Link>
-              {f.isPublic && <span style={{ marginInlineStart: '0.5rem' }}>(ציבורי)</span>}
-              {f.broaderThanParent && (
-                <span title={f.addedGroups.join(', ')} style={{ marginInlineStart: '0.5rem', color: 'darkorange' }}>
-                  ⚠ הרשאות מורחבות
-                </span>
+            <div key={f.id} className="flex items-center gap-3 px-4 h-row-height-standard hover:bg-surface-container-high transition-colors group">
+              {renamingSubfolderId === f.id ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="material-symbols-outlined text-tertiary-container shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    folder
+                  </span>
+                  <input
+                    value={subfolderRenameValue}
+                    onChange={(e) => setSubfolderRenameValue(e.target.value)}
+                    autoFocus
+                    className="flex-1 min-w-0 px-2 py-1 border border-primary rounded-DEFAULT text-body-md font-body-md bg-surface focus:outline-none"
+                  />
+                  <button
+                    onClick={() => onRenameSubfolder(f.id)}
+                    disabled={busy}
+                    className="font-label-xs text-label-xs text-primary hover:underline shrink-0"
+                  >
+                    שמור
+                  </button>
+                  <button
+                    onClick={() => setRenamingSubfolderId(null)}
+                    disabled={busy}
+                    className="font-label-xs text-label-xs text-on-surface-variant hover:underline shrink-0"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Link href={`/folders/${f.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="material-symbols-outlined text-tertiary-container shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      folder
+                    </span>
+                    <span className="font-body-md text-body-md text-on-surface truncate">{f.name}</span>
+                    {f.isPublic && (
+                      <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full shrink-0">
+                        ציבורי
+                      </span>
+                    )}
+                    {f.broaderThanParent && (
+                      <span
+                        title={f.addedGroups.join(', ')}
+                        className="font-label-xs text-label-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-full shrink-0"
+                      >
+                        הרשאות מורחבות
+                      </span>
+                    )}
+                  </Link>
+                  {f.tier === 'manage' && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        onClick={() => {
+                          setRenamingSubfolderId(f.id);
+                          setSubfolderRenameValue(f.name);
+                        }}
+                        title="שנה שם"
+                        aria-label="שנה שם"
+                        className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                      <button
+                        onClick={() => setMoveTarget({ kind: 'subfolder', id: f.id, name: f.name })}
+                        title="העבר"
+                        aria-label="העבר"
+                        className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">drive_file_move</span>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
-      <h2>מסמכים</h2>
+      <h2 className="font-title-sm text-title-sm text-on-surface mt-6 mb-2">מסמכים</h2>
       {documents.length === 0 ? (
-        <p>אין מסמכים בתיקייה זו.</p>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">אין מסמכים בתיקייה זו.</p>
       ) : (
-        <ul>
-          {documents.map((d) => (
-            <li key={d.id}>
-              {d.name} — {formatSize(d.sizeBytes)} — גרסה {d.latestVersionNumber} — {d.status}
-              {' '}
-              <button onClick={() => onDownload(d.id)} disabled={downloadingId === d.id}>
-                {downloadingId === d.id ? 'מוריד...' : 'הורדה'}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="bg-surface-container-lowest rounded-lg border border-outline-variant overflow-hidden shadow-sm">
+          <table className="w-full text-right border-collapse">
+            <thead className="bg-surface-container-low border-b border-outline-variant font-title-sm text-title-sm text-on-surface-variant">
+              <tr>
+                <th className="p-3 font-medium">שם</th>
+                <th className="p-3 font-medium">גודל</th>
+                <th className="p-3 font-medium">גרסה</th>
+                <th className="p-3 font-medium">סטטוס</th>
+                <th className="p-3 font-medium">זמן העלאה</th>
+                <th className="p-3 font-medium">עודכן לאחרונה</th>
+                <th className="p-3 font-medium">נפתח לאחרונה</th>
+                <th className="p-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody className="font-body-sm text-body-sm text-on-surface divide-y divide-outline-variant">
+              {documents.map((d) => (
+                <tr key={d.id} className="hover:bg-surface-container-high transition-colors group">
+                  <td className="p-3">
+                    {renamingDocumentId === d.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={documentRenameValue}
+                          onChange={(e) => setDocumentRenameValue(e.target.value)}
+                          autoFocus
+                          className="px-2 py-1 border border-primary rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none"
+                        />
+                        <button
+                          onClick={() => onRenameDocument(d.id)}
+                          disabled={busy}
+                          className="font-label-xs text-label-xs text-primary hover:underline"
+                        >
+                          שמור
+                        </button>
+                        <button
+                          onClick={() => setRenamingDocumentId(null)}
+                          disabled={busy}
+                          className="font-label-xs text-label-xs text-on-surface-variant hover:underline"
+                        >
+                          ביטול
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-on-surface-variant text-[20px]">description</span>
+                        {d.name}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3 text-on-surface-variant">{formatSize(d.sizeBytes)}</td>
+                  <td className="p-3 text-on-surface-variant">{d.latestVersionNumber}</td>
+                  <td className="p-3">
+                    <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">
+                      {STATUS_LABEL[d.status]}
+                    </span>
+                  </td>
+                  <td className="p-3 text-on-surface-variant" dir="ltr">
+                    {formatDate(d.createdAt)}
+                  </td>
+                  <td className="p-3 text-on-surface-variant" dir="ltr">
+                    {formatDate(d.updatedAt)}
+                  </td>
+                  <td className="p-3 text-on-surface-variant" dir="ltr">
+                    {formatDate(d.lastOpenedAt)}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2 justify-end">
+                      <button
+                        onClick={() => onDownload(d.id)}
+                        disabled={downloadingId === d.id}
+                        className="text-primary hover:underline disabled:opacity-60 font-label-xs text-label-xs"
+                      >
+                        {downloadingId === d.id ? 'מוריד...' : 'הורדה'}
+                      </button>
+                      {canEdit && renamingDocumentId !== d.id && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              setRenamingDocumentId(d.id);
+                              setDocumentRenameValue(d.name);
+                            }}
+                            title="שנה שם"
+                            aria-label="שנה שם"
+                            className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => setMoveTarget({ kind: 'document', id: d.id, name: d.name })}
+                            title="העבר"
+                            aria-label="העבר"
+                            className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">drive_file_move</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </main>
+
+      {moveTarget && (
+        <FolderPicker
+          isOpen
+          onClose={() => setMoveTarget(null)}
+          onMove={onConfirmMove}
+          itemLabel={moveTarget.kind === 'currentFolder' ? folder.name : moveTarget.name}
+          excludeFolderId={
+            moveTarget.kind === 'currentFolder' ? folderId : moveTarget.kind === 'subfolder' ? moveTarget.id : folderId
+          }
+        />
+      )}
+    </AppShell>
   );
 }

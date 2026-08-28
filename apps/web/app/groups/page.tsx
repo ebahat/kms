@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { AppShell } from '../../components/app-shell';
 import { apiErrorMessage } from '../../lib/api';
 import { GroupSummary, groupsApi } from '../../lib/groups-api';
 import { useSession } from '../../lib/use-session';
@@ -41,39 +42,63 @@ export default function GroupsPage() {
     }
   }
 
-  if (!session) return <main style={{ padding: '2rem' }}>טוען...</main>;
+  if (!session) return <div className="min-h-screen bg-background" />;
 
   return (
-    <main style={{ padding: '2rem' }}>
-      <nav style={{ marginBottom: '1rem' }}>
-        <Link href="/home">בית</Link>
-      </nav>
-      <h1>קבוצות</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+    <AppShell session={session} active="groups">
+      <div className="flex justify-between items-end pb-4 border-b border-outline-variant mb-6">
+        <h2 className="font-display-lg text-display-lg text-on-surface">קבוצות</h2>
+        {session.role === 'admin' && (
+          <div className="flex gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="שם קבוצה חדשה"
+              className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={onCreate}
+              disabled={creating || !newName.trim()}
+              className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              צור קבוצה
+            </button>
+          </div>
+        )}
+      </div>
 
-      {session.role === 'admin' && (
-        <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="שם קבוצה חדשה" />
-          <button onClick={onCreate} disabled={creating || !newName.trim()}>
-            צור קבוצה
-          </button>
-        </div>
-      )}
+      {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</p>}
 
       {groups === null ? (
-        <p>טוען...</p>
+        <p className="font-body-md text-body-md text-on-surface-variant">טוען...</p>
       ) : groups.length === 0 ? (
-        <p>אין קבוצות.</p>
+        <p className="font-body-md text-body-md text-on-surface-variant">אין קבוצות.</p>
       ) : (
-        <ul>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
           {groups.map((g) => (
-            <li key={g.id}>
-              <Link href={`/groups/${g.id}`}>{g.name}</Link>
-              {g.memberUserIds && <span style={{ marginInlineStart: '0.5rem' }}>({g.memberUserIds.length} חברים)</span>}
-            </li>
+            <Link
+              key={g.id}
+              href={`/groups/${g.id}`}
+              className="p-3 rounded-lg border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-high transition-colors flex items-start gap-3 shadow-sm"
+            >
+              <div className="w-10 h-10 rounded bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined">group</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="font-title-sm text-title-sm text-on-surface truncate">{g.name}</h4>
+                  {g.members && (
+                    <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full shrink-0">
+                      {g.members.length} חברים
+                    </span>
+                  )}
+                </div>
+              </div>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
-    </main>
+    </AppShell>
   );
 }

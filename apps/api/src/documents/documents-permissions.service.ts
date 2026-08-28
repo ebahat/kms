@@ -35,6 +35,28 @@ export class DocumentsPermissionsService {
     return this.hasAccess(folderId, 'manage');
   }
 
+  /**
+   * Chat's retrieval pre-filter (ADR-0005 §Consumption points, document-chat-rag plan) — the full
+   * permitted-read folder-id set for the current user, computed once per chat request and passed
+   * into `retrieveScoped()`. An empty result is what makes that call short-circuit to zero document
+   * context (sec §5.4, fail-closed grounding). Tenant admins get every folder in the tenant, same
+   * bypass `hasAccess` already applies per-folder.
+   */
+  async permittedReadFolderIds(): Promise<string[]> {
+    const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
+    if (!scope) throw new MissingScopeError('DocumentsPermissionsService');
+
+    const folderDocs = await this.folders.findAllForTenant();
+    if (scope.role === 'admin') return folderDocs.map((f) => f._id.toString());
+
+    const groupDocs = await this.groups.findForMember(scope.userId);
+    const folders = toFolderInputs(folderDocs);
+    const principals = toPrincipalSet(scope.userId.toString(), groupDocs);
+
+    const resolution = await resolveFolderPermissionsCached(this.cache, scope.tenantId.toString(), folders, principals);
+    return resolution.permittedRead;
+  }
+
   private async hasAccess(folderId: string, tier: 'read' | 'edit' | 'manage'): Promise<boolean> {
     const scope = this.cls.get<Scope>(SCOPE_CLS_KEY);
     if (!scope) throw new MissingScopeError('DocumentsPermissionsService');

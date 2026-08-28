@@ -13,25 +13,34 @@ type ObjectId = ReturnType<typeof newObjectId>;
  * raw model insert — this exercises the same tenantScopeBackstopPlugin path
  * production code goes through, rather than bypassing it.
  */
-async function withScope<T>(cls: ClsService, scope: Scope, fn: () => Promise<T>): Promise<T> {
+export async function withScope<T>(cls: ClsService, scope: Scope, fn: () => Promise<T>): Promise<T> {
   return cls.run(async () => {
     cls.set(SCOPE_CLS_KEY, scope);
     return fn();
   });
 }
 
-function scopeFor(tenantId: ObjectId, userId: ObjectId): Scope {
+export function scopeFor(tenantId: ObjectId, userId: ObjectId): Scope {
   return { tenantId, userId, role: 'admin', edition: 'kb', featureToggles: ['calendar', 'kanban'] };
 }
 
+type GroupMemberRole = 'viewer' | 'editor' | 'manager';
+
+/**
+ * `memberUserIds` (pre-2026-08-24) stays supported for every existing call site, defaulting each
+ * id to `manager` — the uncapped tier, preserving exactly the old "every member gets whatever the
+ * group is granted" behavior. Pass `members` directly when a test needs specific per-member roles
+ * (e.g. the permission-matrix suite's viewer/editor/manager capping cases).
+ */
 export async function seedGroup(
   app: INestApplication,
-  opts: { tenantId: ObjectId; memberUserIds: ObjectId[]; name?: string },
+  opts: { tenantId: ObjectId; memberUserIds?: ObjectId[]; members?: { userId: ObjectId; role: GroupMemberRole }[]; name?: string },
 ) {
   const cls = app.get(ClsService);
   const groups = app.get(GroupsRepository);
-  return withScope(cls, scopeFor(opts.tenantId, opts.memberUserIds[0] ?? newObjectId()), () =>
-    groups.create({ name: opts.name ?? 'Test Group', memberUserIds: opts.memberUserIds }),
+  const members = opts.members ?? (opts.memberUserIds ?? []).map((userId) => ({ userId, role: 'manager' as const }));
+  return withScope(cls, scopeFor(opts.tenantId, members[0]?.userId ?? newObjectId()), () =>
+    groups.create({ name: opts.name ?? 'Test Group', members }),
   );
 }
 

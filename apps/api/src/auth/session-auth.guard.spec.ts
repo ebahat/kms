@@ -55,6 +55,21 @@ describe('SessionAuthGuard (ADR-0001 — only writer of tenant context)', () => 
     expect(sessions.touch).toHaveBeenCalled();
   });
 
+  it('populates ownerUserId as the same authenticated user — every tenant-realm session is its own owner, needed by OwnerScopedRepository (conversations/messages, document-chat-rag plan)', async () => {
+    const tenantId = fakeObjectIdHex();
+    const userId = fakeObjectIdHex();
+    const record = { userId, tenantId, role: 'user' as const, edition: 'kb' as const, mfaVerified: true, tosVersion: 'v1', createdAt: '', lastSeenAt: '' };
+    const sessions = { get: jest.fn().mockResolvedValue(record), touch: jest.fn().mockResolvedValue(undefined) };
+    const cls = new FakeCls();
+    const guard = new SessionAuthGuard(sessions as any, cls as any, new Reflector());
+
+    await guard.canActivate(fakeContext({ '__Host-kms_sess': 'abc' }));
+
+    const scope = cls.get<any>(SCOPE_CLS_KEY);
+    expect(scope.ownerUserId.toString()).toBe(userId);
+    expect(scope.ownerUserId.toString()).toBe(scope.userId.toString());
+  });
+
   it('skips session lookup entirely for @Public() routes', async () => {
     const sessions = { get: jest.fn(), touch: jest.fn() };
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(true) } as unknown as Reflector;

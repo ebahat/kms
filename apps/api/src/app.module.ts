@@ -21,6 +21,15 @@ import {
   DocumentVersionSchema,
   DocumentsRepository,
   DocumentVersionsRepository,
+  Chunk,
+  ChunkSchema,
+  ChunksRepository,
+  Conversation,
+  ConversationSchema,
+  ConversationsRepository,
+  ChatMessage,
+  ChatMessageSchema,
+  ChatMessagesRepository,
   AuditEvent,
   AuditEventSchema,
   AuditEventsRepository,
@@ -43,9 +52,12 @@ import {
 import { HealthController } from './health/health.controller';
 import { AuthController } from './auth/auth.controller';
 import { TenantUsersAdminController } from './tenant-admin/tenant-users-admin.controller';
+import { UserLookupController } from './users/user-lookup.controller';
 import { FoldersController } from './folders/folders.controller';
 import { DocumentsController } from './documents/documents.controller';
 import { DocumentsPermissionsService } from './documents/documents-permissions.service';
+import { ChatController } from './chat/chat.controller';
+import { embeddingProviderProvider as chatEmbeddingProviderProvider, chatProviderProvider, retrievalProviderProvider } from './chat/chat.providers';
 import { EventsController } from './groups/events.controller';
 import { TasksController } from './groups/tasks.controller';
 import { CalendarController } from './groups/calendar.controller';
@@ -85,6 +97,9 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: Group.name, schema: GroupSchema },
       { name: Document.name, schema: DocumentSchema },
       { name: DocumentVersion.name, schema: DocumentVersionSchema },
+      { name: Chunk.name, schema: ChunkSchema },
+      { name: Conversation.name, schema: ConversationSchema },
+      { name: ChatMessage.name, schema: ChatMessageSchema },
       { name: AuditEvent.name, schema: AuditEventSchema },
       { name: RecycleBinEntry.name, schema: RecycleBinEntrySchema },
       { name: DeletionVerification.name, schema: DeletionVerificationSchema },
@@ -98,9 +113,11 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     HealthController,
     AuthController,
     TenantUsersAdminController,
+    UserLookupController,
     FoldersController,
     GroupsController,
     DocumentsController,
+    ChatController,
     EventsController,
     TasksController,
     CalendarController,
@@ -124,6 +141,12 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     GroupsRepository,
     DocumentsRepository,
     DocumentVersionsRepository,
+    ChunksRepository,
+    ConversationsRepository,
+    ChatMessagesRepository,
+    chatEmbeddingProviderProvider,
+    chatProviderProvider,
+    retrievalProviderProvider,
     AuditEventsRepository,
     RecycleBinEntriesRepository,
     DeletionVerificationsRepository,

@@ -33,10 +33,17 @@ export type DocumentSummary = {
   sizeBytes: number;
   createdBy: string;
   createdAt: string;
+  /** Mongoose's automatic `updatedAt` — bumped on rename/move/setLatestVersion. */
+  updatedAt: string;
+  /** Stamped on each download-link issuance; absent until the document has been opened at least once. */
+  lastOpenedAt?: string;
 };
 
 /** Mirrors DocumentsController's DownloadDocumentResponse (@kms/contracts) — issued per click, never stored. */
 export type DownloadDocumentResponse = { url: string; expiresAt: string };
+
+/** Mirrors DocumentsController's UploadDocumentResponse (@kms/contracts) — `status` is always 'queued' today, since no ingestion pipeline consumes it yet (Phase 3, not started). */
+export type UploadDocumentResponse = { documentId: string; versionId: string; versionNumber: number; status: 'queued' };
 
 export type GrantsResponse = { id: string; hasExplicitGrants: boolean; isPublic: boolean; grants: FolderGrant[] };
 
@@ -61,6 +68,14 @@ export const foldersApi = {
   remove: (id: string) => tenantApi.del<{ deleted: true }>(`/folders/${id}`),
   documents: (id: string) => tenantApi.get<DocumentSummary[]>(`/folders/${id}/documents`),
   documentDownloadUrl: (documentId: string) => tenantApi.get<DownloadDocumentResponse>(`/documents/${documentId}/download`),
+  uploadDocument: (folderId: string, file: File) => {
+    const form = new FormData();
+    form.append('folderId', folderId);
+    form.append('file', file);
+    return tenantApi.postForm<UploadDocumentResponse>('/documents', form);
+  },
+  renameDocument: (id: string, name: string) => tenantApi.patch<DocumentSummary>(`/documents/${id}`, { name }),
+  moveDocument: (id: string, folderId: string) => tenantApi.patch<DocumentSummary>(`/documents/${id}`, { folderId }),
   addGrant: (id: string, grant: FolderGrant) => tenantApi.post<GrantsResponse>(`/folders/${id}/grants`, grant),
   revokeGrant: (id: string, principalType: 'user' | 'group', principalId: string) =>
     tenantApi.del<GrantsResponse>(`/folders/${id}/grants`, { principalType, principalId }),

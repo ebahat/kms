@@ -29,13 +29,27 @@ docker buildx build --platform linux/arm64 \
 # repeat for portal-api
 
 # web needs two extra --build-arg flags — see the callout below, this is not optional.
+# NEXT_PUBLIC_API_URL=/api (a relative path, NOT https://api.<domain>) — see the same-origin
+# callout below, this is load-bearing for login to work at all, not a style choice.
 docker buildx build --platform linux/arm64 \
-  --build-arg NEXT_PUBLIC_API_URL=https://api.<domain> \
-  --build-arg NEXT_PUBLIC_PORTAL_API_URL=https://admin.<domain> \
+  --build-arg NEXT_PUBLIC_API_URL=/api \
+  --build-arg NEXT_PUBLIC_PORTAL_API_URL= \
   -f apps/web/Dockerfile -t $REGISTRY/kms-web:latest --push .
 ```
 
-**`web`'s two `--build-arg`s are required, not optional — CONFIRMED 2026-08-21 the hard way.**
+**`web`'s `NEXT_PUBLIC_API_URL` must be `/api`, a relative path, not `https://api.<domain>` —
+CONFIRMED 2026-08-21 the hard way, full writeup in
+`docs/architecture/deploy-retro-21-08-2026-review.md`.** `apps/api` sets zero CORS headers, and the
+tenant session cookie uses the `__Host-` prefix (pins it to the exact host that set it, per spec) —
+together these make a cross-origin split between `app.<domain>` (UI) and `api.<domain>` (API)
+**architecturally incompatible with login working at all**, not just slower or less elegant. The
+fix is routing the API under the same origin as the UI: `deploy/Caddyfile`'s `app.{$DOMAIN}` block
+does `handle_path /api/*` → `api:3000` before falling through to `web:3010`, and `web` must be
+built with `NEXT_PUBLIC_API_URL=/api` to match. `NEXT_PUBLIC_PORTAL_API_URL` stays empty — the
+admin realm was already accidentally same-origin (`admin.<domain>` serves both the admin UI and,
+via a path matcher, `portal-api`) and doesn't need this.
+
+**`web`'s two `--build-arg`s are required, not optional.**
 `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_PORTAL_API_URL` are read by client-bundle code and Next.js only
 inlines `NEXT_PUBLIC_*` values at `next build` time (webpack `DefinePlugin`) — **never** at container
 runtime. Setting them in `docker-compose.yml`'s `environment:` block (an earlier version of this repo
@@ -61,6 +75,16 @@ token-exchange, both unscoped and repo-scoped, both succeeded cleanly). Work aro
 (`brew install crane`): `docker save $REGISTRY/kms-web:latest -o image.tar && crane push image.tar
 $REGISTRY/kms-web:latest`. Plain `docker pull` on the VM's own (newer) Docker CE had no such issue —
 this only affects the local build/push leg.
+
+## Deploy gate
+
+`deploy/smoke-deploy.sh` wraps build+push+deploy+verify into one script: builds and pushes all
+three arm64 images with the args above, deploys to the VM over SSH (`docker compose pull && up
+-d`), waits for `/health`, then runs `apps/web/e2e/production-smoke.spec.ts` against the real live
+URL and exits non-zero if it doesn't pass. This is the retro action (2026-08-21) that turns "someone
+notices login is broken after the fact" into a deploy that fails loud. Needs `REGISTRY`, `DOMAIN`,
+`VM_HOST`, `SMOKE_EMAIL`, `SMOKE_PASSWORD` in the environment (`VM_USER` defaults to `opc`) — see
+the script's own header for details. Not wired into CI; run it by hand until there is one.
 
 ## What is NOT deployed here, on purpose
 
