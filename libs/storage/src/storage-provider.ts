@@ -3,6 +3,8 @@ import * as objectstorage from 'oci-objectstorage';
 import * as common from 'oci-common';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { MIME_TYPES } from './magic-byte-sniff';
 
 export const SIGNED_URL_TTL_MS = 5 * 60_000; // ADR-0006: 5 minutes, issued per click, never stored
@@ -139,6 +141,70 @@ export class FakeStorageProvider implements StorageProvider {
   /** Test-only inspection hook — not part of the StorageProvider contract. */
   peek(key: string): { data: Buffer; contentType: string; disposition: 'inline' | 'attachment' } | undefined {
     return this.objects.get(key);
+  }
+}
+
+/**
+ * Dev-only binding backed by real files on local disk (2026-08-29) — for the one thing
+ * FakeStorageProvider structurally cannot do: share state across OS processes. FakeStorageProvider's
+ * `Map` lives in a single process's heap, so a locally-run `apps/api` and `apps/worker` (or
+ * `apps/portal-api`) each get their own empty instance; the worker's scan stage then fails with
+ * "no object at key" for every real upload, even though the API "succeeded". Writing to a shared
+ * directory on disk instead fixes that without needing live cloud credentials. Metadata
+ * (contentType/disposition) that a real bucket would store as object headers is kept in an adjacent
+ * `.meta.json` sidecar file, since the local filesystem has no equivalent. Object keys are always
+ * server-generated ids (see `buildVersionObjectKey`/`buildTenantLogoObjectKey`), never raw user
+ * input, so no path-traversal sanitization is needed here — same trust boundary as every other binding.
+ */
+export class FsStorageProvider implements StorageProvider {
+  constructor(private readonly baseDir: string) {}
+
+  private objectPath(key: string): string {
+    return path.join(this.baseDir, key);
+  }
+
+  private metaPath(key: string): string {
+    return `${this.objectPath(key)}.meta.json`;
+  }
+
+  async putObject(key: string, data: Buffer, opts: { contentType: string; disposition?: 'inline' | 'attachment' }): Promise<void> {
+    const filePath = this.objectPath(key);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, data);
+    await fs.writeFile(this.metaPath(key), JSON.stringify({ contentType: opts.contentType, disposition: opts.disposition ?? 'attachment' }));
+  }
+
+  /** Mirrors FakeStorageProvider's fake:// scheme — this dev binding has no real HTTP server to sign a fetchable URL against either. */
+  async getSignedDownloadUrl(key: string, opts: { displayFilename: string; inline?: boolean; contentType?: string }): Promise<SignedDownloadUrl> {
+    if (!(await this.objectExists(key))) throw new Error(`FsStorageProvider: no object at key "${key}"`);
+    const disposition = opts.inline ? 'inline' : 'attachment';
+    const contentType = opts.inline ? opts.contentType ?? 'application/octet-stream' : 'application/octet-stream';
+    return {
+      url: `fake://storage/${key}?filename=${encodeURIComponent(opts.displayFilename)}&disposition=${disposition}&contentType=${encodeURIComponent(contentType)}`,
+      expiresAt: new Date(Date.now() + SIGNED_URL_TTL_MS),
+    };
+  }
+
+  async objectExists(key: string): Promise<boolean> {
+    try {
+      await fs.access(this.objectPath(key));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    await fs.rm(this.objectPath(key), { force: true });
+    await fs.rm(this.metaPath(key), { force: true });
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    try {
+      return await fs.readFile(this.objectPath(key));
+    } catch {
+      throw new Error(`FsStorageProvider: no object at key "${key}"`);
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from './storage-provider';
+import { FakeStorageProvider, FsStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from './storage-provider';
 
 /**
  * Env-precedence storage-binding selection (ADR-0006/0014/0015), factored out
@@ -33,6 +33,12 @@ export async function selectStorageProviderFromEnv(env: NodeJS.ProcessEnv = proc
     if (!namespace || !region) throw new Error('OCI_DATA_BUCKET is set but OCI_NAMESPACE and/or OCI_REGION is missing');
     return OciStorageProvider.withInstancePrincipals(namespace, ociBucket, region);
   }
+
+  // Dev-only: a shared local directory, so a separately-launched apps/worker process can actually
+  // read what apps/api wrote (FakeStorageProvider's in-memory Map can't cross process boundaries —
+  // found live 2026-08-29 chasing a worker scan-stage "no object at key" failure).
+  const fsDataDir = env.FS_DATA_DIR;
+  if (fsDataDir) return new FsStorageProvider(fsDataDir);
 
   return new FakeStorageProvider();
 }

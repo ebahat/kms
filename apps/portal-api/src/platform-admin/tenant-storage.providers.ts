@@ -1,5 +1,5 @@
 import { Provider } from '@nestjs/common';
-import { FakeStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from '@kms/storage';
+import { FakeStorageProvider, FsStorageProvider, GcsStorageProvider, OciStorageProvider, S3StorageProvider, StorageProvider } from '@kms/storage';
 
 export const STORAGE_PROVIDER = 'STORAGE_PROVIDER' as const;
 
@@ -33,6 +33,9 @@ export const storageProviderProvider: Provider = {
       if (!namespace || !region) throw new Error('OCI_DATA_BUCKET is set but OCI_NAMESPACE and/or OCI_REGION is missing');
       return OciStorageProvider.withInstancePrincipals(namespace, ociBucket, region);
     }
+
+    const fsDataDir = process.env.FS_DATA_DIR;
+    if (fsDataDir) return new FsStorageProvider(fsDataDir);
 
     return new FakeStorageProvider();
   },

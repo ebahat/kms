@@ -1,4 +1,15 @@
-import { buildTenantLogoObjectKey, buildVersionObjectKey, encodeRfc5987Filename, FakeStorageProvider, inferTenantLogoContentType, SIGNED_URL_TTL_MS } from './storage-provider';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import {
+  buildTenantLogoObjectKey,
+  buildVersionObjectKey,
+  encodeRfc5987Filename,
+  FakeStorageProvider,
+  FsStorageProvider,
+  inferTenantLogoContentType,
+  SIGNED_URL_TTL_MS,
+} from './storage-provider';
 
 describe('buildVersionObjectKey (ADR-0006 bucket layout)', () => {
   it('builds a key containing only server-generated ids, never a filename', () => {
@@ -129,6 +140,84 @@ describe('FakeStorageProvider', () => {
     it('deleteObject on a key that was never written is not an error (idempotent, for a retried purge)', async () => {
       const storage = new FakeStorageProvider();
       await expect(storage.deleteObject('nonexistent')).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe('FsStorageProvider (2026-08-29 — real files on disk, so a separate apps/worker process can read what apps/api wrote)', () => {
+  let baseDir: string;
+
+  beforeEach(async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fs-storage-provider-spec-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(baseDir, { recursive: true, force: true });
+  });
+
+  it('round-trips a stored object through getObject', async () => {
+    const storage = new FsStorageProvider(baseDir);
+    const data = Buffer.from('%PDF-1.4 real bytes');
+    await storage.putObject('tenants/t1/versions/v1', data, { contentType: 'application/pdf' });
+
+    await expect(storage.getObject('tenants/t1/versions/v1')).resolves.toEqual(data);
+  });
+
+  it('is readable by a second, independent FsStorageProvider instance pointed at the same directory — the exact cross-process scenario this binding exists for', async () => {
+    const writer = new FsStorageProvider(baseDir);
+    const data = Buffer.from('shared across processes');
+    await writer.putObject('k1', data, { contentType: 'application/pdf' });
+
+    const reader = new FsStorageProvider(baseDir);
+    await expect(reader.getObject('k1')).resolves.toEqual(data);
+  });
+
+  it('creates nested directories for a namespaced key', async () => {
+    const storage = new FsStorageProvider(baseDir);
+    await expect(storage.putObject('tenants/t1/versions/v1', Buffer.from('x'), { contentType: 'application/pdf' })).resolves.toBeUndefined();
+  });
+
+  it('throws for a key that was never written', async () => {
+    const storage = new FsStorageProvider(baseDir);
+    await expect(storage.getObject('missing')).rejects.toThrow();
+  });
+
+  describe('objectExists / deleteObject', () => {
+    it('objectExists is true after putObject and false before it', async () => {
+      const storage = new FsStorageProvider(baseDir);
+      expect(await storage.objectExists('k1')).toBe(false);
+      await storage.putObject('k1', Buffer.from('x'), { contentType: 'application/pdf' });
+      expect(await storage.objectExists('k1')).toBe(true);
+    });
+
+    it('deleteObject removes the object, and objectExists reflects that', async () => {
+      const storage = new FsStorageProvider(baseDir);
+      await storage.putObject('k1', Buffer.from('x'), { contentType: 'application/pdf' });
+      await storage.deleteObject('k1');
+      expect(await storage.objectExists('k1')).toBe(false);
+    });
+
+    it('deleteObject on a key that was never written is not an error (idempotent, for a retried purge)', async () => {
+      const storage = new FsStorageProvider(baseDir);
+      await expect(storage.deleteObject('nonexistent')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getSignedDownloadUrl', () => {
+    it('returns a url and an expiry SIGNED_URL_TTL_MS in the future', async () => {
+      const storage = new FsStorageProvider(baseDir);
+      await storage.putObject('tenants/t1/versions/v1', Buffer.from('hello'), { contentType: 'application/pdf' });
+
+      const before = Date.now();
+      const result = await storage.getSignedDownloadUrl('tenants/t1/versions/v1', { displayFilename: 'report.pdf' });
+
+      expect(result.url).toContain('tenants/t1/versions/v1');
+      expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(before + SIGNED_URL_TTL_MS);
+    });
+
+    it('rejects a key that was never written to storage', async () => {
+      const storage = new FsStorageProvider(baseDir);
+      await expect(storage.getSignedDownloadUrl('nonexistent', { displayFilename: 'x.pdf' })).rejects.toThrow();
     });
   });
 });

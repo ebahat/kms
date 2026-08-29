@@ -55,6 +55,7 @@ import { NotificationDispatchService } from '../notifications/notification-dispa
 import { DocumentsPermissionsService } from './documents-permissions.service';
 import { MulterExceptionFilter } from './multer-exception.filter';
 import { MAX_UPLOAD_BYTES } from './upload-limits';
+import { decodeMultipartFilename } from './decode-multipart-filename';
 import { MIME_TYPES, sniffFileType, buildVersionObjectKey } from '@kms/storage';
 import { purgeEntryObjects } from './recycle-bin-purge';
 import { STORAGE_PROVIDER, INGESTION_QUEUE, StorageProvider, IngestionQueue } from './documents.providers';
@@ -472,6 +473,7 @@ export class DocumentsController {
 
   private requireValidFile(file: Express.Multer.File | undefined): { file: Express.Multer.File; sniffed: keyof typeof MIME_TYPES } {
     if (!file) throw new BadRequestException({ error: 'FILE_REQUIRED' });
+    file.originalname = decodeMultipartFilename(file.originalname);
     const sniffed = sniffFileType(file.buffer);
     if (!sniffed) {
       throw new UnsupportedMediaTypeException({ error: 'UNSUPPORTED_FILE_TYPE', message: 'Allowed types: PDF, DOCX, JPG, PNG.' });

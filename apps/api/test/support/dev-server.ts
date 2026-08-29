@@ -123,6 +123,11 @@ async function main() {
   });
 
   console.log(`\nDev harness API listening on http://localhost:${PORT}`);
+  // mongodb-memory-server binds an ephemeral local mongod known only to this process's own
+  // process.env.MONGO_URI (set at runtime, not inherited by any separately-launched process, e.g.
+  // apps/worker) — printed here so a real worker process can be pointed at the same instance
+  // instead of falling back to a real localhost:27017 that isn't running (2026-08-29 gap found live).
+  console.log(`MONGO_URI=${process.env.MONGO_URI} (point apps/worker at this to share the same in-memory DB)`);
   console.log(`Login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
   console.log(`TOTP secret (compute a live code with otplib's authenticator.generate): ${totpSecret}`);
   console.log(
