@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { DragEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/app-shell';
@@ -52,6 +52,8 @@ export default function FolderDetailPage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [renamingSubfolderId, setRenamingSubfolderId] = useState<string | null>(null);
   const [subfolderRenameValue, setSubfolderRenameValue] = useState('');
@@ -171,18 +173,48 @@ export default function FolderDetailPage() {
     }
   }
 
-  /** Uploads immediately on file selection — same single-step pattern as the CSV import on /users, no separate "confirm" step. */
-  async function onUpload(file: File) {
+  /**
+   * Uploads immediately on selection — same single-step pattern as the CSV import on /users, no
+   * separate "confirm" step. The backend endpoint (POST /documents) takes one file per request, so
+   * a multi-file pick or drop uploads sequentially rather than in one call; one file failing (e.g. an
+   * unsupported type) doesn't abort the rest — failures are collected and reported together at the end.
+   */
+  async function onUploadFiles(files: File[]) {
+    if (files.length === 0) return;
     setUploading(true);
     setError(null);
-    try {
-      await foldersApi.uploadDocument(folderId, file);
-      await load();
-    } catch (e) {
-      setError(apiErrorMessage(e, 'העלאת הקובץ נכשלה'));
-    } finally {
-      setUploading(false);
+    const failures: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress({ done: i, total: files.length });
+      try {
+        await foldersApi.uploadDocument(folderId, files[i]);
+      } catch (e) {
+        failures.push(`${files[i].name}: ${apiErrorMessage(e, 'שגיאה')}`);
+      }
     }
+    setUploadProgress(null);
+    setUploading(false);
+    if (failures.length > 0) setError(`חלק מהקבצים לא הועלו:\n${failures.join('\n')}`);
+    await load();
+  }
+
+  function onDragOverDropzone(e: DragEvent) {
+    if (!canEdit) return;
+    e.preventDefault();
+    setIsDraggingOver(true);
+  }
+
+  function onDragLeaveDropzone(e: DragEvent) {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  }
+
+  function onDropOnDropzone(e: DragEvent) {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    if (!canEdit || uploading) return;
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) void onUploadFiles(files);
   }
 
   async function onDelete() {
@@ -339,15 +371,16 @@ export default function FolderDetailPage() {
             className={`border border-outline-variant text-on-surface font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-surface-container-high transition-colors cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
           >
             <span className="material-symbols-outlined text-sm">upload_file</span>
-            {uploading ? 'מעלה...' : 'העלה קובץ'}
+            {uploading && uploadProgress ? `מעלה... (${uploadProgress.done}/${uploadProgress.total})` : uploading ? 'מעלה...' : 'העלה קבצים'}
             <input
               type="file"
+              multiple
               accept="application/pdf,.docx,.doc,image/jpeg,image/png,.jpg,.jpeg,.png"
               disabled={uploading}
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void onUpload(file);
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) void onUploadFiles(files);
                 e.target.value = '';
               }}
             />
@@ -440,113 +473,133 @@ export default function FolderDetailPage() {
       )}
 
       <h2 className="font-title-sm text-title-sm text-on-surface mt-6 mb-2">מסמכים</h2>
-      {documents.length === 0 ? (
-        <p className="font-body-sm text-body-sm text-on-surface-variant">אין מסמכים בתיקייה זו.</p>
-      ) : (
-        <div className="bg-surface-container-lowest rounded-lg border border-outline-variant overflow-hidden shadow-sm">
-          <table className="w-full text-right border-collapse">
-            <thead className="bg-surface-container-low border-b border-outline-variant font-title-sm text-title-sm text-on-surface-variant">
-              <tr>
-                <th className="p-3 font-medium">שם</th>
-                <th className="p-3 font-medium">גודל</th>
-                <th className="p-3 font-medium">גרסה</th>
-                <th className="p-3 font-medium">סטטוס</th>
-                <th className="p-3 font-medium">זמן העלאה</th>
-                <th className="p-3 font-medium">עודכן לאחרונה</th>
-                <th className="p-3 font-medium">נפתח לאחרונה</th>
-                <th className="p-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="font-body-sm text-body-sm text-on-surface divide-y divide-outline-variant">
-              {documents.map((d) => (
-                <tr key={d.id} className="hover:bg-surface-container-high transition-colors group">
-                  <td className="p-3">
-                    {renamingDocumentId === d.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          value={documentRenameValue}
-                          onChange={(e) => setDocumentRenameValue(e.target.value)}
-                          autoFocus
-                          className="px-2 py-1 border border-primary rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none"
-                        />
-                        <button
-                          onClick={() => onRenameDocument(d.id)}
-                          disabled={busy}
-                          className="font-label-xs text-label-xs text-primary hover:underline"
-                        >
-                          שמור
-                        </button>
-                        <button
-                          onClick={() => setRenamingDocumentId(null)}
-                          disabled={busy}
-                          className="font-label-xs text-label-xs text-on-surface-variant hover:underline"
-                        >
-                          ביטול
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-on-surface-variant text-[20px]">description</span>
-                        {d.name}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3 text-on-surface-variant">{formatSize(d.sizeBytes)}</td>
-                  <td className="p-3 text-on-surface-variant">{d.latestVersionNumber}</td>
-                  <td className="p-3">
-                    <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">
-                      {STATUS_LABEL[d.status]}
-                    </span>
-                  </td>
-                  <td className="p-3 text-on-surface-variant" dir="ltr">
-                    {formatDate(d.createdAt)}
-                  </td>
-                  <td className="p-3 text-on-surface-variant" dir="ltr">
-                    {formatDate(d.updatedAt)}
-                  </td>
-                  <td className="p-3 text-on-surface-variant" dir="ltr">
-                    {formatDate(d.lastOpenedAt)}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => onDownload(d.id)}
-                        disabled={downloadingId === d.id}
-                        className="text-primary hover:underline disabled:opacity-60 font-label-xs text-label-xs"
-                      >
-                        {downloadingId === d.id ? 'מוריד...' : 'הורדה'}
-                      </button>
-                      {canEdit && renamingDocumentId !== d.id && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div
+        onDragOver={onDragOverDropzone}
+        onDragLeave={onDragLeaveDropzone}
+        onDrop={onDropOnDropzone}
+        className={
+          canEdit && isDraggingOver
+            ? 'rounded-lg border-2 border-dashed border-primary bg-primary-container/20 transition-colors'
+            : canEdit
+              ? 'rounded-lg border-2 border-dashed border-transparent transition-colors'
+              : undefined
+        }
+      >
+        {canEdit && isDraggingOver && (
+          <p className="font-body-sm text-body-sm text-primary text-center py-3 pointer-events-none">
+            שחררו כאן להעלאת הקבצים
+          </p>
+        )}
+        {documents.length === 0 ? (
+          <p className="font-body-sm text-body-sm text-on-surface-variant p-3">
+            אין מסמכים בתיקייה זו.{canEdit && !isDraggingOver && ' ניתן לגרור קבצים לכאן להעלאה.'}
+          </p>
+        ) : (
+          <div className="bg-surface-container-lowest rounded-lg border border-outline-variant overflow-hidden shadow-sm">
+            <table className="w-full text-right border-collapse">
+              <thead className="bg-surface-container-low border-b border-outline-variant font-title-sm text-title-sm text-on-surface-variant">
+                <tr>
+                  <th className="p-3 font-medium">שם</th>
+                  <th className="p-3 font-medium">גודל</th>
+                  <th className="p-3 font-medium">גרסה</th>
+                  <th className="p-3 font-medium">סטטוס</th>
+                  <th className="p-3 font-medium">זמן העלאה</th>
+                  <th className="p-3 font-medium">עודכן לאחרונה</th>
+                  <th className="p-3 font-medium">נפתח לאחרונה</th>
+                  <th className="p-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody className="font-body-sm text-body-sm text-on-surface divide-y divide-outline-variant">
+                {documents.map((d) => (
+                  <tr key={d.id} className="hover:bg-surface-container-high transition-colors group">
+                    <td className="p-3">
+                      {renamingDocumentId === d.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={documentRenameValue}
+                            onChange={(e) => setDocumentRenameValue(e.target.value)}
+                            autoFocus
+                            className="px-2 py-1 border border-primary rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none"
+                          />
                           <button
-                            onClick={() => {
-                              setRenamingDocumentId(d.id);
-                              setDocumentRenameValue(d.name);
-                            }}
-                            title="שנה שם"
-                            aria-label="שנה שם"
-                            className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                            onClick={() => onRenameDocument(d.id)}
+                            disabled={busy}
+                            className="font-label-xs text-label-xs text-primary hover:underline"
                           >
-                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                            שמור
                           </button>
                           <button
-                            onClick={() => setMoveTarget({ kind: 'document', id: d.id, name: d.name })}
-                            title="העבר"
-                            aria-label="העבר"
-                            className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                            onClick={() => setRenamingDocumentId(null)}
+                            disabled={busy}
+                            className="font-label-xs text-label-xs text-on-surface-variant hover:underline"
                           >
-                            <span className="material-symbols-outlined text-[18px]">drive_file_move</span>
+                            ביטול
                           </button>
                         </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-on-surface-variant text-[20px]">description</span>
+                          {d.name}
+                        </div>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </td>
+                    <td className="p-3 text-on-surface-variant">{formatSize(d.sizeBytes)}</td>
+                    <td className="p-3 text-on-surface-variant">{d.latestVersionNumber}</td>
+                    <td className="p-3">
+                      <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">
+                        {STATUS_LABEL[d.status]}
+                      </span>
+                    </td>
+                    <td className="p-3 text-on-surface-variant" dir="ltr">
+                      {formatDate(d.createdAt)}
+                    </td>
+                    <td className="p-3 text-on-surface-variant" dir="ltr">
+                      {formatDate(d.updatedAt)}
+                    </td>
+                    <td className="p-3 text-on-surface-variant" dir="ltr">
+                      {formatDate(d.lastOpenedAt)}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          onClick={() => onDownload(d.id)}
+                          disabled={downloadingId === d.id}
+                          className="text-primary hover:underline disabled:opacity-60 font-label-xs text-label-xs"
+                        >
+                          {downloadingId === d.id ? 'מוריד...' : 'הורדה'}
+                        </button>
+                        {canEdit && renamingDocumentId !== d.id && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setRenamingDocumentId(d.id);
+                                setDocumentRenameValue(d.name);
+                              }}
+                              title="שנה שם"
+                              aria-label="שנה שם"
+                              className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => setMoveTarget({ kind: 'document', id: d.id, name: d.name })}
+                              title="העבר"
+                              aria-label="העבר"
+                              className="p-1.5 text-on-surface-variant hover:bg-surface-container-highest rounded transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">drive_file_move</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {moveTarget && (
         <FolderPicker
