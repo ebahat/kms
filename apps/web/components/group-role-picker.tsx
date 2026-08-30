@@ -2,7 +2,26 @@
 
 import { GroupMemberRole, GroupSummary } from '../lib/groups-api';
 
-const ROLE_LABELS: Record<GroupMemberRole, string> = { viewer: 'צופה', editor: 'עורך', manager: 'מנהל' };
+export const ROLE_LABELS: Record<GroupMemberRole, string> = { viewer: 'צופה', editor: 'עורך', manager: 'מנהל' };
+
+/**
+ * Distinct color per tier (2026-08-29, from the c1.2_updated_group_controls Stitch mockup's own
+ * tailwind.config — 'admin' there is this app's 'manager'). Full static class strings, not
+ * `bg-role-${role}` interpolation — Tailwind's build-time scanner only picks up literal class
+ * names, so a template string here would silently produce no CSS in production. Exported for
+ * `groups/[id]/page.tsx`'s member-role select, which needs the identical treatment.
+ */
+export const ROLE_SELECT_COLOR: Record<GroupMemberRole, string> = {
+  viewer: 'bg-role-viewer border-role-viewer text-on-primary focus:ring-role-viewer',
+  editor: 'bg-role-editor border-role-editor text-on-primary focus:ring-role-editor',
+  manager: 'bg-role-admin border-role-admin text-on-primary focus:ring-role-admin',
+};
+export const ROLE_ROW_TINT: Record<GroupMemberRole, string> = {
+  viewer: 'bg-role-viewer/10 hover:bg-role-viewer/20',
+  editor: 'bg-role-editor/10 hover:bg-role-editor/20',
+  manager: 'bg-role-admin/10 hover:bg-role-admin/20',
+};
+export const UNASSIGNED_SELECT_COLOR = 'bg-surface border-outline-variant text-on-surface focus:ring-primary';
 
 export type GroupAssignment = { groupId: string; role: GroupMemberRole };
 
@@ -35,25 +54,31 @@ export function GroupRolePicker({
   }
 
   return (
-    <div className="border border-outline-variant rounded-DEFAULT divide-y divide-outline-variant max-h-60 overflow-y-auto">
-      {groups.map((g) => (
-        <div key={g.id} className="flex items-center justify-between gap-3 px-3 py-2">
-          <span className="font-body-sm text-body-sm text-on-surface truncate">{g.name}</span>
-          <select
-            aria-label={`תפקיד בקבוצה ${g.name}`}
-            value={roleFor(g.id)}
-            onChange={(e) => setRole(g.id, e.target.value as GroupMemberRole | '')}
-            className="bg-surface border border-outline-variant rounded-DEFAULT py-1 px-2 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shrink-0"
+    <div className="flex flex-col border border-outline-variant rounded-lg overflow-hidden bg-surface max-h-60 overflow-y-auto divide-y divide-outline-variant">
+      {groups.map((g) => {
+        const role = roleFor(g.id);
+        return (
+          <div
+            key={g.id}
+            className={`flex items-center justify-between gap-3 px-3 py-2 transition-colors ${role === '' ? 'hover:bg-surface-container-low' : ROLE_ROW_TINT[role]}`}
           >
-            <option value="">לא חבר</option>
-            {(Object.entries(ROLE_LABELS) as [GroupMemberRole, string][]).map(([role, label]) => (
-              <option key={role} value={role}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      ))}
+            <span className="font-body-sm text-body-sm text-on-surface truncate">{g.name}</span>
+            <select
+              aria-label={`תפקיד בקבוצה ${g.name}`}
+              value={role}
+              onChange={(e) => setRole(g.id, e.target.value as GroupMemberRole | '')}
+              className={`rounded-DEFAULT py-1 px-2 border font-body-sm text-body-sm focus:outline-none focus:ring-1 shrink-0 ${role === '' ? UNASSIGNED_SELECT_COLOR : ROLE_SELECT_COLOR[role]}`}
+            >
+              <option value="">לא חבר</option>
+              {(Object.entries(ROLE_LABELS) as [GroupMemberRole, string][]).map(([r, label]) => (
+                <option key={r} value={r}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+      })}
     </div>
   );
 }

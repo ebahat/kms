@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/app-shell';
+import { BackButton } from '../../../components/back-button';
 import { ApiError, apiErrorMessage } from '../../../lib/api';
+import { ROLE_LABELS, ROLE_ROW_TINT, ROLE_SELECT_COLOR } from '../../../components/group-role-picker';
 import { GroupMemberRole, GroupSummary, groupsApi } from '../../../lib/groups-api';
-import { usersApi } from '../../../lib/users-api';
+import { UserSummary, usersApi } from '../../../lib/users-api';
 import { useSession } from '../../../lib/use-session';
-
-const ROLE_LABELS: Record<GroupMemberRole, string> = { viewer: 'צופה', editor: 'עורך', manager: 'מנהל' };
 
 /** UI spec C2 detail — membership add/remove/delete are admin-only (GroupsController.updateMembers/remove). Deleting a group still referenced by a folder grant, calendar event, or kanban task 409s with a GROUP_IN_USE message, surfaced here rather than silently retried. */
 export default function GroupDetailPage() {
@@ -26,6 +26,7 @@ export default function GroupDetailPage() {
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [tenantUsers, setTenantUsers] = useState<UserSummary[]>([]);
 
   const load = useCallback(async () => {
     setNotFound(false);
@@ -43,6 +44,12 @@ export default function GroupDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Powers the add-member autocomplete dropdown (2026-08-29) — admin-only, matching the fetch's own server-side guard (TenantUsersAdminController). */
+  useEffect(() => {
+    if (session?.role !== 'admin') return;
+    usersApi.list().then(setTenantUsers).catch(() => setTenantUsers([]));
+  }, [session?.role]);
 
   async function onRename() {
     if (!renameValue.trim()) return;
@@ -145,11 +152,10 @@ export default function GroupDetailPage() {
 
   return (
     <AppShell session={session} active="groups">
-      <nav className="mb-4">
-        <Link href="/groups" className="text-primary hover:underline font-body-sm text-body-sm">
-          קבוצות
-        </Link>
-      </nav>
+      <div className="flex items-center gap-3 mb-4">
+        <BackButton href="/groups" label="חזרה לקבוצות" />
+        <h1 className="font-headline-md text-headline-md text-on-surface">קבוצות</h1>
+      </div>
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 shadow-sm mb-6">
         <div className="flex justify-between items-start">
@@ -231,23 +237,31 @@ export default function GroupDetailPage() {
           <table className="w-full text-right border-collapse">
             <tbody className="font-body-sm text-body-sm divide-y divide-outline-variant">
               {group.members.map((m) => (
-                <tr key={m.userId} className="hover:bg-surface-container-high transition-colors">
+                <tr key={m.userId} className={`transition-colors ${ROLE_ROW_TINT[m.role]}`}>
                   <td className="py-2 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0">
                         <span className="material-symbols-outlined text-[18px]">person</span>
                       </div>
-                      {m.userId}
+                      <div className="min-w-0">
+                        {m.firstName || m.lastName ? (
+                          <p className="font-body-sm text-body-sm text-on-surface truncate">{[m.firstName, m.lastName].filter(Boolean).join(' ')}</p>
+                        ) : (
+                          <p className="font-body-sm text-body-sm text-on-surface-variant italic">ללא שם</p>
+                        )}
+                        <p className="font-code-sm text-code-sm text-on-surface-variant truncate">{m.email}</p>
+                        <p className="font-code-sm text-code-sm text-on-surface-variant/70 truncate" dir="ltr">{m.userId}</p>
+                      </div>
                     </div>
                   </td>
-                  <td className="py-2 px-4 w-32">
+                  <td className="py-2 px-4 w-36">
                     {session.role === 'admin' ? (
                       <select
                         aria-label="תפקיד"
                         value={m.role}
                         disabled={busy}
                         onChange={(e) => onChangeMemberRole(m.userId, e.target.value as GroupMemberRole)}
-                        className="bg-surface border border-outline-variant rounded-DEFAULT py-1 px-2 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        className={`rounded-DEFAULT py-1 px-2 border font-body-sm text-body-sm focus:outline-none focus:ring-1 ${ROLE_SELECT_COLOR[m.role]}`}
                       >
                         {(Object.entries(ROLE_LABELS) as [GroupMemberRole, string][]).map(([role, label]) => (
                           <option key={role} value={role}>
@@ -256,7 +270,9 @@ export default function GroupDetailPage() {
                         ))}
                       </select>
                     ) : (
-                      ROLE_LABELS[m.role]
+                      <span className={`inline-flex items-center px-2 py-1 rounded-DEFAULT font-body-sm text-body-sm ${ROLE_SELECT_COLOR[m.role]}`}>
+                        {ROLE_LABELS[m.role]}
+                      </span>
                     )}
                   </td>
                   <td className="py-2 px-4 text-center w-16">
@@ -284,13 +300,22 @@ export default function GroupDetailPage() {
               onChange={(e) => setNewMemberId(e.target.value)}
               placeholder="אימייל המשתמש"
               type="email"
+              list="group-member-users"
               className="flex-1 px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
             />
+            {/* Autocomplete dropdown of every tenant user (2026-08-29) — a native <datalist> needs no new dependency and works with the existing free-text + lookupByEmail flow unchanged. */}
+            <datalist id="group-member-users">
+              {tenantUsers.map((u) => (
+                <option key={u.id} value={u.email}>
+                  {[u.firstName, u.lastName].filter(Boolean).join(' ') || u.email}
+                </option>
+              ))}
+            </datalist>
             <select
               aria-label="תפקיד לחבר החדש"
               value={newMemberRole}
               onChange={(e) => setNewMemberRole(e.target.value as GroupMemberRole)}
-              className="bg-surface border border-outline-variant rounded-DEFAULT py-2 px-3 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              className={`rounded-DEFAULT py-2 px-3 border font-body-sm text-body-sm focus:outline-none focus:ring-1 ${ROLE_SELECT_COLOR[newMemberRole]}`}
             >
               {(Object.entries(ROLE_LABELS) as [GroupMemberRole, string][]).map(([role, label]) => (
                 <option key={role} value={role}>

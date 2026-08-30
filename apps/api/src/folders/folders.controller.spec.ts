@@ -284,6 +284,61 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
       await expect(controller.create({ parentId: null, name: '' })).rejects.toThrow(ZodError);
       expect(folders.createFolder).not.toHaveBeenCalled();
     });
+
+    it('applies each provided group grant to a new root folder and bumps/audits once, not once per grant (product-gaps batch, 2026-08-29 item 6)', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const groupA = newObjectId();
+      const groupB = newObjectId();
+      const created = folderDoc({ name: 'Root' });
+      folders.createFolder.mockResolvedValue(created);
+      folders.upsertGrant
+        .mockResolvedValueOnce(folderDoc({ ...created, hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupA, access: 'edit' }] }))
+        .mockResolvedValueOnce(
+          folderDoc({
+            ...created,
+            hasExplicitGrants: true,
+            grants: [
+              { principalType: 'group', principalId: groupA, access: 'edit' },
+              { principalType: 'group', principalId: groupB, access: 'read' },
+            ],
+          }),
+        );
+
+      const result = await controller.create({
+        parentId: null,
+        name: 'Root',
+        grants: [
+          { principalType: 'group', principalId: groupA.toString(), access: 'edit' },
+          { principalType: 'group', principalId: groupB.toString(), access: 'read' },
+        ],
+      });
+
+      expect(folders.upsertGrant).toHaveBeenCalledTimes(2);
+      expect(folders.upsertGrant).toHaveBeenNthCalledWith(1, created._id, { principalType: 'group', principalId: groupA, access: 'edit' });
+      expect(folders.upsertGrant).toHaveBeenNthCalledWith(2, created._id, { principalType: 'group', principalId: groupB, access: 'read' });
+      expect(result.hasExplicitGrants).toBe(true);
+      expect(cache.bumpVersion).toHaveBeenCalledTimes(1);
+      expect(auditEvents.record).toHaveBeenCalledTimes(1);
+      expect(auditEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'folder.created', metadata: expect.objectContaining({ grants: expect.arrayContaining([expect.objectContaining({ principalId: groupA.toString() })]) }) }),
+      );
+    });
+
+    it('creates a root folder with no explicit grants when none are provided (grants stays optional)', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+
+      await controller.create({ parentId: null, name: 'Root' });
+
+      expect(folders.upsertGrant).not.toHaveBeenCalled();
+    });
+
+    it('rejects a grant with a non-group principalType at creation time (group-only, per contract)', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+
+      await expect(
+        controller.create({ parentId: null, name: 'Root', grants: [{ principalType: 'user', principalId: newObjectId().toString(), access: 'read' }] }),
+      ).rejects.toThrow(ZodError);
+    });
   });
 
   describe('rename', () => {
@@ -599,6 +654,84 @@ describe('FoldersController (Phase 2 plan Task 3 — read routes)', () => {
 
       expect(result.tier).toBeNull();
       expect(result.decidingGrant).toBeNull();
+    });
+  });
+
+  describe('grantedGroups (cross-group visibility, product-gaps batch 2026-08-29 item 6/7e)', () => {
+    it('404s a caller with only read tier — edit is the bar, not manage', async () => {
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'user', principalId: userId, access: 'read' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+
+      await expect(controller.grantedGroups(folder._id.toString())).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns group grants (name + tier) to a caller with edit tier — manage is not required', async () => {
+      const otherGroupId = newObjectId();
+      const folder = folderDoc({
+        hasExplicitGrants: true,
+        grants: [
+          { principalType: 'user', principalId: userId, access: 'edit' },
+          { principalType: 'group', principalId: groupId, access: 'edit' },
+          { principalType: 'group', principalId: otherGroupId, access: 'read' },
+        ],
+      });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      groups.findAllForTenant.mockResolvedValue([
+        { _id: groupId, name: 'מנהלים' },
+        { _id: otherGroupId, name: 'צוות מטה' },
+      ]);
+
+      const result = await controller.grantedGroups(folder._id.toString());
+
+      expect(result).toEqual([
+        { groupId: groupId.toString(), groupName: 'מנהלים', access: 'edit' },
+        { groupId: otherGroupId.toString(), groupName: 'צוות מטה', access: 'read' },
+      ]);
+    });
+
+    it('never includes user-type grants in the response', async () => {
+      const folder = folderDoc({
+        hasExplicitGrants: true,
+        grants: [
+          { principalType: 'user', principalId: userId, access: 'manage' },
+          { principalType: 'group', principalId: groupId, access: 'read' },
+        ],
+      });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      groups.findAllForTenant.mockResolvedValue([{ _id: groupId, name: 'Sales' }]);
+
+      const result = await controller.grantedGroups(folder._id.toString());
+
+      expect(result).toEqual([{ groupId: groupId.toString(), groupName: 'Sales', access: 'read' }]);
+    });
+
+    it('resolves group grants through inheritance for a folder with no explicit grants of its own', async () => {
+      const parent = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'manage' }] });
+      const child = folderDoc({ parentId: parent._id, path: [parent._id] });
+      folders.findAllForTenant.mockResolvedValue([parent, child]);
+      groups.findAllForTenant.mockResolvedValue([{ _id: groupId, name: 'Sales' }]);
+      // The caller reaches edit tier on `child` via inherited group membership, not a direct grant —
+      // this is exactly the "editors of these groups" scenario the feature is meant to serve.
+      groups.findForMember.mockResolvedValue([{ _id: groupId, members: [{ userId, role: 'editor' }] }]);
+
+      const result = await controller.grantedGroups(child._id.toString());
+
+      expect(result).toEqual([{ groupId: groupId.toString(), groupName: 'Sales', access: 'manage' }]);
+    });
+
+    it('a tenant admin can always see the list, regardless of grants', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const folder = folderDoc({ hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupId, access: 'read' }] });
+      folders.findAllForTenant.mockResolvedValue([folder]);
+      groups.findAllForTenant.mockResolvedValue([{ _id: groupId, name: 'Sales' }]);
+
+      const result = await controller.grantedGroups(folder._id.toString());
+
+      expect(result).toEqual([{ groupId: groupId.toString(), groupName: 'Sales', access: 'read' }]);
+    });
+
+    it('404s a nonexistent folder', async () => {
+      await expect(controller.grantedGroups(newObjectId().toString())).rejects.toThrow(NotFoundException);
     });
   });
 });

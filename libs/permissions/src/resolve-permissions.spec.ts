@@ -1,4 +1,4 @@
-import { computeFolderWidening, resolveFolderPermissions } from './resolve-permissions';
+import { computeFolderWidening, resolveEffectiveGroupGrants, resolveFolderPermissions } from './resolve-permissions';
 import { DecidingGrant, FolderInput } from './types';
 
 /** `cappedFrom` only exists on the named-principal branch of the DecidingGrant union — this narrows past the `via: 'public'` branch for the group-role-cap assertions below. */
@@ -345,5 +345,56 @@ describe('computeFolderWidening (ADR-0005, amended 2026-07-19)', () => {
     const info = computeFolderWidening(folders).get('child')!;
     expect(info.broaderThanParent).toBe(true); // any grant is broader than a deny-all (nonexistent) parent
     expect(info.addedGroups).toEqual([groupA]);
+  });
+});
+
+describe('resolveEffectiveGroupGrants (cross-group visibility, product-gaps batch 2026-08-29 item 6/7e)', () => {
+  const groupA = 'group-a';
+  const groupB = 'group-b';
+  const userId = 'user-1';
+
+  it("returns the folder's own explicit group grants", () => {
+    const folders = [
+      folder('f1', null, {
+        hasExplicitGrants: true,
+        grants: [
+          { principalType: 'group', principalId: groupA, access: 'edit' },
+          { principalType: 'group', principalId: groupB, access: 'read' },
+        ],
+      }),
+    ];
+    expect(resolveEffectiveGroupGrants(folders, 'f1')).toEqual([
+      { principalType: 'group', principalId: groupA, access: 'edit' },
+      { principalType: 'group', principalId: groupB, access: 'read' },
+    ]);
+  });
+
+  it('excludes user-type grants — this is a group-only disclosure surface', () => {
+    const folders = [
+      folder('f1', null, {
+        hasExplicitGrants: true,
+        grants: [
+          { principalType: 'user', principalId: userId, access: 'manage' },
+          { principalType: 'group', principalId: groupA, access: 'read' },
+        ],
+      }),
+    ];
+    expect(resolveEffectiveGroupGrants(folders, 'f1')).toEqual([{ principalType: 'group', principalId: groupA, access: 'read' }]);
+  });
+
+  it("resolves through inheritance — a folder with no explicit grants reports its parent's effective group grants", () => {
+    const folders = [
+      folder('parent', null, { hasExplicitGrants: true, grants: [{ principalType: 'group', principalId: groupA, access: 'edit' }] }),
+      folder('child', 'parent'),
+    ];
+    expect(resolveEffectiveGroupGrants(folders, 'child')).toEqual([{ principalType: 'group', principalId: groupA, access: 'edit' }]);
+  });
+
+  it('returns an empty array for a folder with no group grants', () => {
+    expect(resolveEffectiveGroupGrants([folder('f1', null)], 'f1')).toEqual([]);
+  });
+
+  it("fails closed (empty array) for an unknown folder id, matching computeEffectiveBundles's own orphan handling", () => {
+    expect(resolveEffectiveGroupGrants([folder('f1', null)], 'does-not-exist')).toEqual([]);
   });
 });

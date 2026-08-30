@@ -78,9 +78,24 @@ describe('GroupsRepository', () => {
 
   it('findOneByName scopes by tenantId in addition to name', () => {
     const model = makeModel();
+    const collation = jest.fn().mockReturnValue('the-query');
+    model.findOne.mockReturnValue({ collation });
     const repo = new GroupsRepository(model as any, cls as any);
     repo.findOneByName('Sales');
     expect(model.findOne).toHaveBeenCalledWith(expect.objectContaining({ tenantId, name: 'Sales' }));
+  });
+
+  /** 2026-08-29 fix — "Sales" and "sales" were previously treated as distinct group names. */
+  it('findOneByName matches case-insensitively via a MongoDB collation, not by lowercasing the query itself', () => {
+    const model = makeModel();
+    const collation = jest.fn().mockReturnValue('the-query');
+    model.findOne.mockReturnValue({ collation });
+    const repo = new GroupsRepository(model as any, cls as any);
+
+    repo.findOneByName('Sales');
+
+    expect(model.findOne).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sales' }));
+    expect(collation).toHaveBeenCalledWith({ locale: 'en', strength: 2 });
   });
 
   it('rename updates the name field and returns the refreshed document', async () => {

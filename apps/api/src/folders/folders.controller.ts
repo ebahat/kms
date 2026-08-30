@@ -40,6 +40,7 @@ import {
   FolderWideningInfo,
   PermissionCache,
   computeFolderWideningCached,
+  resolveEffectiveGroupGrants,
   resolveFolderPermissions,
   resolveFolderPermissionsCached,
   toFolderInputs,
@@ -134,7 +135,7 @@ export class FoldersController {
   @HttpCode(201)
   async create(@Body() body: unknown) {
     const parsed = CreateFolderRequestSchema.parse(body);
-    const { name } = parsed;
+    const { name, grants } = parsed;
     // Normalized to canonical lowercase hex: Mongoose ObjectId#toString() always lowercases, but
     // the request-schema regex accepts uppercase hex too — an uppercase-but-valid id would silently
     // fail every in-memory `permittedEdit.includes(parentId)` string comparison below otherwise.
@@ -145,8 +146,15 @@ export class FoldersController {
       // No parent to hold an `edit` grant — creating a root folder is a tenant-admin action, not a
       // hidden-resource case, so this is a real 403 rather than the usual 404-on-denial convention.
       if (scope.role !== 'admin') throw new ForbiddenException();
-      const created = await this.folders.createFolder({ name, parentId: null });
-      await this.bumpVersionAndAudit(created._id.toString(), 'folder.created', { parentId: null, name });
+      let created = await this.folders.createFolder({ name, parentId: null });
+      // Root-folder group picker (product-gaps batch, 2026-08-29 item 6) — applied sequentially, no
+      // Mongo transactions in this codebase (same best-effort convention as bumpVersionAndAudit
+      // itself). One bump+audit for the whole create, not one per grant.
+      for (const grant of grants ?? []) {
+        const updated = await this.folders.upsertGrant(created._id, { ...grant, principalId: toObjectId(grant.principalId) });
+        if (updated) created = updated;
+      }
+      await this.bumpVersionAndAudit(created._id.toString(), 'folder.created', { parentId: null, name, grants: grants ?? [] });
       return this.toCreatedSummary(created);
     }
 
@@ -313,6 +321,29 @@ export class FoldersController {
           : null;
 
     return { userId: targetUserId, folderId: id, tier, decidingGrant: resolution.decidingGrant.get(id) ?? null };
+  }
+
+  /**
+   * Cross-group visibility (product-gaps batch, 2026-08-29 item 6/7e): "editors and admins of these
+   * groups" should be able to see which OTHER groups also have access to a folder, so nobody
+   * accidentally publishes somewhere an unexpected group can also see. Deliberately gated at `edit`
+   * tier, NOT `manage` — a real, narrower disclosure than detail()'s manage-gated raw grants array:
+   * group principals only (name + tier), never user-type grants or any other folder metadata.
+   */
+  @Get(':id/granted-groups')
+  async grantedGroups(@Param('id') id: string) {
+    await this.requireTier(id, 'edit');
+    id = id.toLowerCase(); // canonical form — see requireTier's own comment for why
+
+    const allFolders = await this.folders.findAllForTenant();
+    const groupGrants = resolveEffectiveGroupGrants(toFolderInputs(allFolders), id);
+    const groupNames = await this.groupNameLookup();
+
+    return groupGrants.map((g) => ({
+      groupId: g.principalId,
+      groupName: groupNames.get(g.principalId) ?? g.principalId,
+      access: g.access,
+    }));
   }
 
   private grantsResponse(folder: FolderDocument) {

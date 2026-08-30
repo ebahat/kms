@@ -14,12 +14,17 @@ export type RetrievedChunk = GroundingChunk & { score: number };
  *
  * The number itself is a rough placeholder, not a calibrated value — real calibration is exactly
  * what the ADR-0008 Hebrew benchmark gate (test plan §4.2's `not-found` dataset) is for, and that
- * gate hasn't run (document-chat-rag plan's scope cut). 0.15 is chosen conservatively against the
- * Fake embedding provider's own measured behavior (`embedding-provider.spec.ts`: near-identical
- * text scores > 0.6, clearly unrelated text scores < 0.3) — low enough not to reject a real but
- * loosely-worded match, high enough to reject genuinely unrelated content.
+ * gate hasn't run (document-chat-rag plan's scope cut). Raised from 0.15 to 0.22 (2026-08-29)
+ * after a live false positive: a Hebrew question about a construction contractor scored 0.1735
+ * against a real but topically unrelated seeded chunk (shared roots/function words like
+ * "ישיבה/ישיבות" and "פרויקט" inflate the Fake embedding provider's lexical/trigram score), just
+ * above the old floor — while a genuinely unrelated control question scored 0.048. 0.22 is chosen
+ * against the Fake embedding provider's own measured behavior (`embedding-provider.spec.ts`:
+ * near-identical text scores > 0.6, clearly unrelated text scores < 0.3) — still a placeholder,
+ * not a calibrated value, but far enough above the observed 0.1735 false positive to reject it
+ * while staying below genuinely relevant matches.
  */
-export const MIN_RELEVANCE_SCORE = 0.15;
+export const MIN_RELEVANCE_SCORE = 0.22;
 
 export interface RetrievalProvider {
   retrieve(query: { text: string; embedding: number[] }, permittedFolderIds: string[], limit: number): Promise<RetrievedChunk[]>;

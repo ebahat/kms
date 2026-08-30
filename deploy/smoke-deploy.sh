@@ -35,15 +35,15 @@ ssh "$VM_USER@$VM_HOST" "cd ~ && sudo docker compose pull && sudo docker compose
 
 echo "==> Waiting for /health"
 for _ in $(seq 1 30); do
-  if curl -sf "https://api.$DOMAIN/health" >/dev/null 2>&1; then
+  if curl -sf "https://kiboapi.$DOMAIN/health" >/dev/null 2>&1; then
     echo "API is healthy."
     break
   fi
   sleep 2
 done
 
-echo "==> Running the production smoke test against https://app.$DOMAIN"
-SMOKE_BASE_URL="https://app.$DOMAIN" SMOKE_EMAIL="$SMOKE_EMAIL" SMOKE_PASSWORD="$SMOKE_PASSWORD" \
+echo "==> Running the production smoke test against https://kibo.$DOMAIN"
+SMOKE_BASE_URL="https://kibo.$DOMAIN" SMOKE_EMAIL="$SMOKE_EMAIL" SMOKE_PASSWORD="$SMOKE_PASSWORD" \
   pnpm --filter @kms/web exec playwright test e2e/production-smoke.spec.ts
 
 echo "==> Deploy verified: images pushed, VM updated, real login confirmed working."

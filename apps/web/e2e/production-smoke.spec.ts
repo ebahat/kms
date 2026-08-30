@@ -23,7 +23,7 @@ import { expect, test } from '@playwright/test';
  * or ships a `web` image built without the right `NEXT_PUBLIC_*` build args.
  *
  * Run against a deployment:
- *   SMOKE_BASE_URL=https://app.bahat.co.il \
+ *   SMOKE_BASE_URL=https://kibo.bahat.co.il \
  *   SMOKE_EMAIL=... SMOKE_PASSWORD=... \
  *   pnpm --filter @kms/web exec playwright test e2e/production-smoke.spec.ts
  *

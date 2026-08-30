@@ -47,6 +47,12 @@ export type UploadDocumentResponse = { documentId: string; versionId: string; ve
 
 export type GrantsResponse = { id: string; hasExplicitGrants: boolean; isPublic: boolean; grants: FolderGrant[] };
 
+/** Group-only grant, root-folder creation time only (product-gaps batch, 2026-08-29 item 6). */
+export type FolderGroupGrant = { principalType: 'group'; principalId: string; access: 'read' | 'edit' | 'manage' };
+
+/** Cross-group visibility (item 6/7e) — group name + tier only, never user-type grants. */
+export type GrantedGroup = { groupId: string; groupName: string; access: 'read' | 'edit' | 'manage' };
+
 export type DecidingGrant =
   | { tier: 'read' | 'edit' | 'manage'; via: 'public' }
   | { tier: 'read' | 'edit' | 'manage'; via: { principalType: 'user' | 'group'; principalId: string } };
@@ -61,7 +67,7 @@ export type EffectivePermission = {
 export const foldersApi = {
   list: (parentId?: string) => tenantApi.get<FolderSummary[]>(`/folders${toQuery({ parentId })}`),
   detail: (id: string) => tenantApi.get<FolderDetail>(`/folders/${id}`),
-  create: (input: { parentId: string | null; name: string }) =>
+  create: (input: { parentId: string | null; name: string; grants?: FolderGroupGrant[] }) =>
     tenantApi.post<{ id: string; name: string; parentId: string | null; hasExplicitGrants: boolean; isPublic: boolean }>('/folders', input),
   rename: (id: string, name: string) => tenantApi.patch<{ id: string; name: string }>(`/folders/${id}`, { name }),
   move: (id: string, parentId: string | null) => tenantApi.patch<{ id: string; parentId: string | null }>(`/folders/${id}/move`, { parentId }),
@@ -83,4 +89,5 @@ export const foldersApi = {
   setPublic: (id: string, isPublic: boolean) => tenantApi.patch<GrantsResponse>(`/folders/${id}/public`, { isPublic }),
   effectivePermission: (id: string, userId: string) =>
     tenantApi.get<EffectivePermission>(`/folders/${id}/effective-permission${toQuery({ userId })}`),
+  grantedGroups: (id: string) => tenantApi.get<GrantedGroup[]>(`/folders/${id}/granted-groups`),
 };

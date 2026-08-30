@@ -80,11 +80,17 @@ test('C1 golden path: login, create a user, see it pending, resend its invite', 
   await page.getByRole('link', { name: 'ניהול' }).click();
   await page.waitForURL('**/users');
 
+  // Create-user is its own screen (2026-08-29) — "צור משתמש" navigates to /users/new rather than
+  // expanding an inline form.
+  await page.getByRole('link', { name: 'צור משתמש' }).click();
+  await page.waitForURL('**/users/new');
+
   const newEmail = `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}@dev-harness.test`;
   await page.locator('#new-user-email').fill(newEmail);
   await page.locator('#new-user-first-name').fill('Test');
   await page.locator('#new-user-last-name').fill('User');
   await page.getByRole('button', { name: 'צור משתמש' }).click();
+  await page.waitForURL('**/users?invited=**');
 
   // No password is ever shown — an invite email was sent instead.
   await expect(page.getByText('נשלחה הזמנה בדוא"ל')).toBeVisible();

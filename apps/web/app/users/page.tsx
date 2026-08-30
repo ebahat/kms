@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '../../components/app-shell';
-import { GroupAssignment, GroupRolePicker } from '../../components/group-role-picker';
 import { apiErrorMessage } from '../../lib/api';
-import { GroupSummary, groupsApi } from '../../lib/groups-api';
 import { CsvImportRowResult, UserSummary, usersApi } from '../../lib/users-api';
 import { useSession } from '../../lib/use-session';
 
@@ -18,19 +17,22 @@ const STATUS_BADGE: Record<UserSummary['status'], string> = {
   locked: 'bg-error-container text-on-error-container',
 };
 
-/** UI spec C1 — TenantUsersAdminController's @UseGuards(AdminOnlyGuard) is class-level, so every route here (including list) 403s for a non-admin server-side; the home-page nav link is admin-only too, so a non-admin can only reach this page by typing the URL directly, in which case it just surfaces the 403 as a generic load error. */
+/** useSearchParams() (picking up /users/new's ?invited= redirect) requires a Suspense boundary in the App Router, or the build fails prerendering this page — same pattern as login/page.tsx and activate/page.tsx. */
 export default function UsersPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <UsersPageContent />
+    </Suspense>
+  );
+}
+
+/** UI spec C1 — TenantUsersAdminController's @UseGuards(AdminOnlyGuard) is class-level, so every route here (including list) 403s for a non-admin server-side; the home-page nav link is admin-only too, so a non-admin can only reach this page by typing the URL directly, in which case it just surfaces the 403 as a generic load error. */
+function UsersPageContent() {
   const session = useSession();
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<UserSummary[] | null>(null);
-  const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [newEmail, setNewEmail] = useState('');
-  const [newFirstName, setNewFirstName] = useState('');
-  const [newLastName, setNewLastName] = useState('');
-  const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
-  const [newGroups, setNewGroups] = useState<GroupAssignment[]>([]);
-  const [creating, setCreating] = useState(false);
   const [inviteSentFor, setInviteSentFor] = useState<string | null>(null);
 
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -47,30 +49,13 @@ export default function UsersPage() {
 
   useEffect(() => {
     load();
-    groupsApi.list().then(setGroups).catch(() => setGroups([]));
   }, []);
 
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newEmail.trim() || !newFirstName.trim() || !newLastName.trim()) return;
-    setCreating(true);
-    setError(null);
-    setInviteSentFor(null);
-    try {
-      const result = await usersApi.create(newEmail.trim(), newFirstName.trim(), newLastName.trim(), newRole, newGroups);
-      setInviteSentFor(result.email);
-      setNewEmail('');
-      setNewFirstName('');
-      setNewLastName('');
-      setNewRole('user');
-      setNewGroups([]);
-      await load();
-    } catch (e) {
-      setError(apiErrorMessage(e, 'יצירת המשתמש נכשלה'));
-    } finally {
-      setCreating(false);
-    }
-  }
+  /** Picks up the invite-sent confirmation from /users/new's redirect (2026-08-29 — create-user moved to its own screen). */
+  useEffect(() => {
+    const invited = searchParams.get('invited');
+    if (invited) setInviteSentFor(invited);
+  }, [searchParams]);
 
   async function onToggleStatus(user: UserSummary) {
     setBusyId(user.id);
@@ -128,6 +113,13 @@ export default function UsersPage() {
         {isAdmin && (
           <div className="flex gap-2">
           <Link
+            href="/users/new"
+            className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm"
+          >
+            <span className="material-symbols-outlined text-sm">person_add</span>
+            צור משתמש
+          </Link>
+          <Link
             href="/recycle-bin"
             className="bg-surface-container-high text-on-surface font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT border border-outline-variant flex items-center gap-2 hover:bg-surface-container-highest transition-colors shadow-sm"
           >
@@ -166,78 +158,6 @@ export default function UsersPage() {
             </button>
           </div>
         </div>
-      )}
-
-      {isAdmin && (
-        <form onSubmit={onCreate} className="bg-surface-container-low p-4 rounded-lg border border-outline-variant mb-6">
-          <div className="flex gap-4 items-end flex-wrap">
-            <div>
-              <label htmlFor="new-user-email" className="block font-label-xs text-label-xs text-on-surface-variant mb-1">
-                דוא&quot;ל
-              </label>
-              <input
-                id="new-user-email"
-                type="email"
-                required
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-user-first-name" className="block font-label-xs text-label-xs text-on-surface-variant mb-1">
-                שם פרטי
-              </label>
-              <input
-                id="new-user-first-name"
-                required
-                value={newFirstName}
-                onChange={(e) => setNewFirstName(e.target.value)}
-                className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-user-last-name" className="block font-label-xs text-label-xs text-on-surface-variant mb-1">
-                שם משפחה
-              </label>
-              <input
-                id="new-user-last-name"
-                required
-                value={newLastName}
-                onChange={(e) => setNewLastName(e.target.value)}
-                className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-user-role" className="block font-label-xs text-label-xs text-on-surface-variant mb-1">
-                תפקיד
-              </label>
-              <select
-                id="new-user-role"
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as 'user' | 'admin')}
-                className="bg-surface border border-outline-variant rounded-DEFAULT py-2 px-3 font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="user">משתמש</option>
-                <option value="admin">מנהל</option>
-              </select>
-            </div>
-            <button
-              type="submit"
-              disabled={creating || !newEmail.trim() || !newFirstName.trim() || !newLastName.trim()}
-              className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined text-sm">person_add</span>
-              צור משתמש
-            </button>
-          </div>
-          <div className="mt-4">
-            <p className="block font-label-xs text-label-xs text-on-surface-variant mb-1">שיוך לקבוצות (אופציונלי)</p>
-            <div className="max-w-md">
-              <GroupRolePicker groups={groups} value={newGroups} onChange={setNewGroups} />
-            </div>
-          </div>
-        </form>
       )}
 
       {users === null ? (

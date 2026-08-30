@@ -6,10 +6,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/app-shell';
 import { FolderPicker } from '../../../components/folder-picker';
 import { ApiError, apiErrorMessage } from '../../../lib/api';
-import { DocumentSummary, FolderDetail, FolderSummary, foldersApi } from '../../../lib/folders-api';
+import { DocumentSummary, FolderDetail, FolderSummary, GrantedGroup, foldersApi } from '../../../lib/folders-api';
 import { useSession } from '../../../lib/use-session';
 
 const STATUS_LABEL: Record<DocumentSummary['status'], string> = { queued: 'ממתין', processing: 'בעיבוד', indexed: 'מאונדקס', failed: 'נכשל' };
+const TIER_LABEL: Record<'read' | 'edit' | 'manage', string> = { read: 'צפייה', edit: 'עריכה', manage: 'ניהול' };
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -59,16 +60,29 @@ export default function FolderDetailPage() {
   const [subfolderRenameValue, setSubfolderRenameValue] = useState('');
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null);
   const [documentRenameValue, setDocumentRenameValue] = useState('');
+  const [grantedGroups, setGrantedGroups] = useState<GrantedGroup[] | null>(null);
 
   const load = useCallback(async () => {
     setNotFound(false);
     setError(null);
+    // Cleared up front, not just reassigned after the fetch resolves — this panel states which
+    // groups can see the folder's contents, so carrying over the PREVIOUS folder's group list while
+    // this one is still loading would misrepresent who has access, not just look stale.
+    setGrantedGroups(null);
     try {
       const [f, kids, docs] = await Promise.all([foldersApi.detail(folderId), foldersApi.list(folderId), foldersApi.documents(folderId)]);
       setFolder(f);
       setChildren(kids);
       setDocuments(docs);
       setRenameValue(f.name);
+      // Cross-group visibility (product-gaps batch, 2026-08-29 item 6/7e) — edit tier and above only,
+      // matching the backend's own gate; a plain viewer simply doesn't see this panel.
+      if (f.tier === 'edit' || f.tier === 'manage') {
+        foldersApi
+          .grantedGroups(folderId)
+          .then(setGrantedGroups)
+          .catch(() => setGrantedGroups(null));
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setNotFound(true);
       else setError(apiErrorMessage(e, 'שגיאה בטעינת התיקייה'));
@@ -285,6 +299,21 @@ export default function FolderDetailPage() {
           </span>
         )}
       </div>
+
+      {grantedGroups && grantedGroups.length > 0 && (
+        <div className="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 mb-4 flex items-start gap-2">
+          <span className="material-symbols-outlined text-secondary text-[20px] mt-0.5">visibility</span>
+          <p className="font-body-sm text-body-sm text-on-surface">
+            לקבוצות הבאות יש גישה לתיקייה זו:{' '}
+            {grantedGroups.map((g, i) => (
+              <span key={g.groupId}>
+                {i > 0 && ', '}
+                <span className="font-medium">{g.groupName}</span> ({TIER_LABEL[g.access]})
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
 
       {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 my-4 font-body-sm text-body-sm">{error}</p>}
       {downloadNotice && (

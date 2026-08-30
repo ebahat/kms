@@ -23,16 +23,19 @@
 	}
 }
 
-# Tenant API
-api.{$DOMAIN} {
+# Tenant API. Named "kiboapi" rather than plain "api" (2026-08-30) — api.{$DOMAIN} was already
+# taken on this domain, same reason as the tenant-UI hostname below.
+kiboapi.{$DOMAIN} {
 	import security_headers
 	reverse_proxy api:3000
 }
 
 # Platform-admin realm — separate hostname is a real security boundary (ADR-0004), not cosmetic.
-# The admin UI is served by `web` on this hostname (via apps/web's middleware.ts hostname rewrite),
-# while admin *data* comes from portal-api. Matches ADR-0007's original two-hostname design.
-admin.{$DOMAIN} {
+# The admin UI is served by `web` on this hostname (via apps/web's middleware.ts hostname rewrite,
+# which matches on the "kiboadmin." prefix), while admin *data* comes from portal-api. Matches
+# ADR-0007's original two-hostname design. Named "kiboadmin" rather than plain "admin" (2026-08-30)
+# — admin.{$DOMAIN} was already taken on this domain, same reason as the other two hostnames here.
+kiboadmin.{$DOMAIN} {
 	import security_headers
 
 	# Admin API calls go to portal-api; everything else is the Next.js admin UI.
@@ -42,23 +45,32 @@ admin.{$DOMAIN} {
 	reverse_proxy web:3010
 }
 
-# Tenant-facing UI + tenant API under the SAME origin.
+# Tenant-facing UI (product name: Kibo) + tenant API under the SAME origin.
 #
-# CONFIRMED BROKEN 2026-08-21 and fixed here: serving the UI on app.<domain> while the browser called
-# the API on api.<domain> is cross-origin, which breaks tenant login two independent ways —
+# CONFIRMED BROKEN 2026-08-21 and fixed here: serving the UI on one hostname while the browser
+# called the API on a different hostname is cross-origin, which breaks tenant login two independent
+# ways —
 #   1. no CORS headers exist anywhere in apps/api, so the browser's preflight
 #      (`OPTIONS /auth/login`) 404s and the real POST is never sent at all; and
 #   2. the session cookie is `__Host-kms_sess` (ADR-0004 / sec §2), and the __Host- prefix pins a
-#      cookie to the exact host that set it — a cookie set by api.<domain> can NEVER be sent by a
-#      page on app.<domain>, no matter what CORS allows.
+#      cookie to the exact host that set it — a cookie set by kiboapi.{$DOMAIN} can NEVER be sent
+#      by a page on this hostname, no matter what CORS allows.
 # Routing the API under this same hostname fixes both without weakening either: no CORS is needed
 # because it isn't cross-origin, and __Host- keeps its full strength. `handle_path` strips the /api
 # prefix, so apps/api still sees its own unprefixed routes (/auth/login, /folders, ...).
 #
-# The admin realm already worked precisely because it was accidentally same-origin (admin.<domain>
-# serving both the admin UI and, via the @api matcher below, portal-api) — this makes the tenant
-# realm match that shape deliberately.
-app.{$DOMAIN} {
+# The admin realm already worked precisely because it was accidentally same-origin
+# (kiboadmin.{$DOMAIN} serving both the admin UI and, via the @api matcher above, portal-api) —
+# this makes the tenant realm match that shape deliberately.
+#
+# Hostname is "kibo" rather than "app" (2026-08-30) — app.{$DOMAIN} was already in use for
+# something else on this domain. Nothing else depends on the literal string "app": apps/web's
+# NEXT_PUBLIC_API_URL is baked as the relative path `/api` (deploy/smoke-deploy.sh), not an
+# absolute hostname, so the Docker image itself needs no rebuild for this rename — only this site
+# block, APP_PUBLIC_URL below, and the DNS record need to change together. The API and admin
+# hostnames (above) were renamed the same day, from plain "api"/"admin", for the same taken-name
+# reason — apps/web/middleware.ts's admin-host detection was updated to match "kiboadmin.".
+kibo.{$DOMAIN} {
 	import security_headers
 
 	handle_path /api/* {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { AppShell } from '../../../components/app-shell';
+import { BackButton } from '../../../components/back-button';
 import { GroupAssignment, GroupRolePicker } from '../../../components/group-role-picker';
 import { ApiError, apiErrorMessage } from '../../../lib/api';
 import { GroupSummary, groupsApi } from '../../../lib/groups-api';
@@ -112,14 +113,11 @@ export default function EditUserPage() {
 
   return (
     <AppShell session={session} active="admin">
-      <nav className="mb-4">
-        <Link href="/users" className="text-primary hover:underline font-body-sm text-body-sm">
-          ניהול משתמשים
-        </Link>
-      </nav>
-
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 shadow-sm max-w-2xl">
-        <h2 className="font-headline-md text-headline-md text-on-surface mb-6">עריכת משתמש</h2>
+        <div className="flex items-center gap-3 mb-6">
+          <BackButton href="/users" label="ניהול משתמשים" />
+          <h2 className="font-headline-md text-headline-md text-on-surface">עריכת משתמש</h2>
+        </div>
 
         {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</p>}
         {saved && <p className="bg-primary-container/10 border border-primary text-on-surface rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">השינויים נשמרו.</p>}

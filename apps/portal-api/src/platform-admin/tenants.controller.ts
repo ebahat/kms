@@ -40,6 +40,7 @@ import { PASSWORD_PEPPER } from '../auth/auth.providers';
 import { SESSION_SERVICE } from '../auth/platform-session-auth.guard';
 import { MulterExceptionFilter } from './tenant-logo-multer-exception.filter';
 import { STORAGE_PROVIDER, StorageProvider } from './tenant-storage.providers';
+import { ZodExceptionFilter } from './zod-exception.filter';
 
 const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024; // 2 MB — a logo, not a document (C1.3)
 
@@ -60,6 +61,7 @@ type TenantWithLogoUrl = Tenant & { logoUrl?: string };
  * routing is separately-gated production infra work, not part of this controller).
  */
 @Controller('platform-admin/tenants')
+@UseFilters(ZodExceptionFilter)
 export class PlatformTenantsController {
   private readonly logger = new Logger('PlatformAudit');
 

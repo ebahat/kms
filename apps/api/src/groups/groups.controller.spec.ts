@@ -17,6 +17,7 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
 
   let cls: any;
   let groups: any;
+  let users: any;
   let folders: any;
   let events: any;
   let tasks: any;
@@ -36,12 +37,13 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
       removeMembers: jest.fn(),
       deleteOne: jest.fn().mockResolvedValue(undefined),
     };
+    users = { find: jest.fn().mockResolvedValue([]) };
     folders = { findAllForTenant: jest.fn().mockResolvedValue([]) };
     events = { findForGroup: jest.fn().mockResolvedValue([]) };
     tasks = { findForGroup: jest.fn().mockResolvedValue([]) };
     auditEvents = { record: jest.fn().mockResolvedValue(undefined) };
     cache = { bumpVersion: jest.fn().mockResolvedValue(1) };
-    controller = new GroupsController(cls, groups, folders, events, tasks, auditEvents, cache);
+    controller = new GroupsController(cls, groups, users, folders, events, tasks, auditEvents, cache);
   });
 
   describe('list', () => {
@@ -51,7 +53,9 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
 
       const result = await controller.list();
 
-      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', members: [{ userId: userId.toString(), role: 'editor' }] }]);
+      expect(result).toEqual([
+        { id: group._id.toString(), name: 'Group', members: [{ userId: userId.toString(), role: 'editor', email: '', firstName: undefined, lastName: undefined }] },
+      ]);
     });
 
     it('withholds members for a group the non-admin caller does not belong to', async () => {
@@ -72,7 +76,23 @@ describe('GroupsController (Phase 2 plan Task 6)', () => {
 
       const result = await controller.list();
 
-      expect(result).toEqual([{ id: group._id.toString(), name: 'Group', members: [{ userId: other.toString(), role: 'manager' }] }]);
+      expect(result).toEqual([
+        { id: group._id.toString(), name: 'Group', members: [{ userId: other.toString(), role: 'manager', email: '', firstName: undefined, lastName: undefined }] },
+      ]);
+    });
+
+    it('resolves each member’s email/name from a single batched users lookup across every group (2026-08-29)', async () => {
+      cls.get.mockReturnValue({ tenantId, userId, role: 'admin', edition: 'kb', featureToggles: [] });
+      const member = newObjectId();
+      const group = groupDoc({ members: [{ userId: member, role: 'editor' }] });
+      groups.findAllForTenant.mockResolvedValue([group]);
+      users.find.mockResolvedValue([{ _id: member, email: 'dana@example.com', firstName: 'Dana', lastName: 'Cohen' }]);
+
+      const result = await controller.list();
+
+      expect(users.find).toHaveBeenCalledTimes(1);
+      expect(users.find).toHaveBeenCalledWith({ _id: { $in: [member] } });
+      expect((result[0] as any).members).toEqual([{ userId: member.toString(), role: 'editor', email: 'dana@example.com', firstName: 'Dana', lastName: 'Cohen' }]);
     });
   });
 

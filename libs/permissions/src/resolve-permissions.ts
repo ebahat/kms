@@ -103,6 +103,20 @@ function buildPrincipalCaps(principals: PrincipalSet): Map<string, AccessTier> {
   return caps;
 }
 
+/**
+ * The effective *group* grants on one folder, inheritance already resolved (ADR-0005 step 2) — the
+ * "which other groups can also see this?" cross-visibility feature (product-gaps batch, 2026-08-29
+ * item 6/7e), not a per-user answer like resolveFolderPermissions's decidingGrant. User-type grants
+ * are deliberately excluded — this is a narrower disclosure than the existing manage-tier raw-grants
+ * view, meant to be shown at a lower (edit) tier. Returns `[]` for an unknown folder id, matching
+ * computeEffectiveBundles's own orphan (fail-closed) handling.
+ */
+export function resolveEffectiveGroupGrants(folders: FolderInput[], folderId: string): FolderGrantInput[] {
+  const bundle = computeEffectiveBundles(folders).get(folderId);
+  if (!bundle) return [];
+  return bundle.grants.filter((g) => g.principalType === 'group');
+}
+
 export function resolveFolderPermissions(folders: FolderInput[], principals: PrincipalSet): FolderPermissionResolution {
   const effectiveBundles = computeEffectiveBundles(folders);
   const principalCaps = buildPrincipalCaps(principals);

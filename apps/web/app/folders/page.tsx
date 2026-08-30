@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/app-shell';
+import { CreateRootFolderModal } from '../../components/create-root-folder-modal';
 import { apiErrorMessage } from '../../lib/api';
 import { FolderSummary, foldersApi } from '../../lib/folders-api';
 import { useSession } from '../../lib/use-session';
@@ -14,8 +15,7 @@ export default function FoldersRootPage() {
   const router = useRouter();
   const [folders, setFolders] = useState<FolderSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     foldersApi
@@ -24,19 +24,9 @@ export default function FoldersRootPage() {
       .catch((e) => setError(apiErrorMessage(e, 'שגיאה בטעינת התיקיות')));
   }, []);
 
-  async function onCreate() {
-    if (!newName.trim()) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const created = await foldersApi.create({ parentId: null, name: newName.trim() });
-      setNewName('');
-      router.push(`/folders/${created.id}`);
-    } catch (e) {
-      setError(apiErrorMessage(e, 'יצירת התיקייה נכשלה'));
-    } finally {
-      setCreating(false);
-    }
+  function onCreated(folderId: string) {
+    setModalOpen(false);
+    router.push(`/folders/${folderId}`);
   }
 
   if (!session) return <div className="min-h-screen bg-background" />;
@@ -48,24 +38,17 @@ export default function FoldersRootPage() {
           <h2 className="font-display-lg text-display-lg text-on-surface">תיקיות</h2>
         </div>
         {session.role === 'admin' && (
-          <div className="flex gap-2">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="שם תיקיית שורש חדשה"
-              className="px-3 py-2 border border-outline-variant rounded-DEFAULT text-body-sm font-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
-            <button
-              onClick={onCreate}
-              disabled={creating || !newName.trim()}
-              className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined text-sm">add</span>
-              צור תיקייה
-            </button>
-          </div>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="bg-primary text-on-primary-dynamic font-title-sm text-title-sm py-2 px-4 rounded-DEFAULT flex items-center gap-2 hover:bg-primary-container hover:text-on-primary-container transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
+            צור תיקיית שורש
+          </button>
         )}
       </div>
+
+      <CreateRootFolderModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onCreated={onCreated} />
 
       {error && <p className="bg-error-container text-on-error-container rounded-DEFAULT px-3 py-2.5 mb-4 font-body-sm text-body-sm">{error}</p>}
 

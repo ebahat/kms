@@ -11,6 +11,7 @@ import {
   Scope,
   TasksRepository,
   toObjectId,
+  UsersRepository,
 } from '@kms/data';
 import { PermissionCache } from '@kms/permissions';
 import { AdminOnlyGuard } from '../common/admin-only.guard';
@@ -38,6 +39,7 @@ export class GroupsController {
   constructor(
     private readonly cls: ClsService,
     private readonly groups: GroupsRepository,
+    private readonly users: UsersRepository,
     private readonly folders: FoldersRepository,
     private readonly events: EventsRepository,
     private readonly tasks: TasksRepository,
@@ -49,7 +51,9 @@ export class GroupsController {
   async list() {
     const scope = this.currentScope();
     const allGroups = await this.groups.findAllForTenant();
-    return allGroups.map((g) => this.toSummary(g, scope));
+    const allUserIds = allGroups.flatMap((g) => g.members.map((m) => m.userId));
+    const usersMap = await this.resolveUsersMap(allUserIds);
+    return Promise.all(allGroups.map((g) => this.toSummary(g, scope, usersMap)));
   }
 
   @Get(':id')
@@ -73,7 +77,7 @@ export class GroupsController {
 
     const created = await this.groups.createGroup(name);
     await this.auditEvents.record({ action: 'group.created', targetId: created._id, metadata: { name } });
-    return this.toSummary(created, scope);
+    return await this.toSummary(created, scope);
   }
 
   /** Rename — same uniqueness discipline as create (excluding the group's own current name/id). */
@@ -185,11 +189,31 @@ export class GroupsController {
    * in an "Executives" or "Legal" group, and now their role within it) — withheld from a caller who
    * is neither a tenant admin nor a member of this specific group, same withholding pattern as
    * FoldersController.detail()'s grants array below manage tier.
+   *
+   * `usersMap` is an optional pre-fetched batch (list() builds one call across every group instead
+   * of N+1 lookups); every other call site has exactly one group's members and resolves its own.
    */
-  private toSummary(group: GroupDocument, scope: Scope) {
+  private async toSummary(group: GroupDocument, scope: Scope, usersMap?: Map<string, { email: string; firstName?: string; lastName?: string }>) {
     const base = { id: group._id.toString(), name: group.name };
     const isMember = group.members.some((m) => m.userId.equals(scope.userId));
     if (scope.role !== 'admin' && !isMember) return base;
-    return { ...base, members: group.members.map((m) => ({ userId: m.userId.toString(), role: m.role })) };
+
+    const map = usersMap ?? (await this.resolveUsersMap(group.members.map((m) => m.userId)));
+    return {
+      ...base,
+      members: group.members.map((m) => {
+        const u = map.get(m.userId.toString());
+        return { userId: m.userId.toString(), role: m.role, email: u?.email ?? '', firstName: u?.firstName, lastName: u?.lastName };
+      }),
+    };
+  }
+
+  /** A member whose account was deleted out-of-band (shouldn't happen — nothing deletes users — but not modeled as impossible) resolves to an absent map entry; toSummary falls back to an empty email rather than throwing. */
+  private async resolveUsersMap(userIds: ReturnType<typeof toObjectId>[]): Promise<Map<string, { email: string; firstName?: string; lastName?: string }>> {
+    const map = new Map<string, { email: string; firstName?: string; lastName?: string }>();
+    if (userIds.length === 0) return map;
+    const found = await this.users.find({ _id: { $in: userIds } });
+    for (const u of found) map.set(u._id.toString(), { email: u.email, firstName: u.firstName, lastName: u.lastName });
+    return map;
   }
 }

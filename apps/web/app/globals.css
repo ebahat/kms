@@ -63,6 +63,14 @@
   --color-on-background: #1b1b21;
   --color-surface-variant: #e5e1e9;
 
+  /* Group-membership tier colors (2026-08-29) — from the c1.2_updated_group_controls Stitch
+     mockup's own inline tailwind.config, not invented here; 'admin' in that mockup is this app's
+     'manager' tier (GroupMemberRole). Solid fill on the selected tier's own <select>, `on-primary`
+     (white) text — same contrast pairing the mockup uses, no separate on-role token needed. */
+  --color-role-viewer: #5b7a9d;
+  --color-role-editor: #00897b;
+  --color-role-admin: #312e81;
+
   --radius-DEFAULT: 0.125rem;
   --radius-lg: 0.25rem;
   --radius-xl: 0.5rem;

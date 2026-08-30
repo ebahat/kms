@@ -9,13 +9,26 @@ DNS must resolve **before** the first deploy, or Caddy cannot obtain Let's Encry
 
 1. **Provision** — `cd infra && terraform apply`, then note `terraform output public_ip`.
 2. **DNS** — point three A-records at that IP:
-   `api.<domain>`, `admin.<domain>`, `app.<domain>`. Verify with `dig +short api.<domain>`.
+   `kiboapi.<domain>`, `kiboadmin.<domain>`, `kibo.<domain>` (all three prefixed/named for the
+   product rather than plain "api"/"admin"/"app", since those bare subdomains may already be taken
+   on a shared personal/company domain — rename them in `Caddyfile`, `APP_PUBLIC_URL`, and
+   `apps/web/middleware.ts`'s admin-host check together if you use different ones).
+   Verify with `dig +short kiboapi.<domain>`.
 3. **Build and push arm64 images** (see below).
 4. **Deploy** — copy `docker-compose.yml`, `Caddyfile`, and a filled-in `.env` to the VM, then
    `docker compose up -d`.
-5. **Seed the first accounts** — `docker compose exec api node dist/bootstrap/seed.js`
-   (and the equivalent in `portal-api`). Needs `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`/
-   `SEED_TENANT_NAME` in the environment; idempotent on email.
+5. **Seed the first accounts** — `docker compose run --rm -e SEED_ADMIN_EMAIL=... -e
+   SEED_ADMIN_PASSWORD=... [-e SEED_TENANT_NAME=... for api only] api dist/bootstrap/seed.js` (and
+   the equivalent for `portal-api`). **Not** `docker compose exec ... node ...` — `api` and
+   `portal-api` both run on `gcr.io/distroless/nodejs22-debian12` (no shell, no `node` reachable by
+   name for `exec` to find — confirmed 2026-08-30 the hard way, `exec: "node": executable file not
+   found in $PATH`). `docker compose run` sidesteps this: it starts a fresh one-off container from
+   the same image and passes the script path as the replacement `CMD`, which the distroless image's
+   own baked-in `ENTRYPOINT` (already the node binary) runs directly — no need to locate `node` on
+   disk at all. `MONGO_URI`/`PASSWORD_PEPPER` are picked up automatically from the service's own
+   `environment:` block in `docker-compose.yml`, same as the running container. Idempotent on email.
+   (`web` is the one service NOT on distroless — plain `node:22-slim` — so `exec` would have worked
+   there, but it has no seed script.)
 
 ## Building for arm64 (the one real gotcha)
 
@@ -37,17 +50,22 @@ docker buildx build --platform linux/arm64 \
   -f apps/web/Dockerfile -t $REGISTRY/kms-web:latest --push .
 ```
 
-**`web`'s `NEXT_PUBLIC_API_URL` must be `/api`, a relative path, not `https://api.<domain>` —
+**`web`'s `NEXT_PUBLIC_API_URL` must be `/api`, a relative path, not an absolute API hostname —
 CONFIRMED 2026-08-21 the hard way, full writeup in
 `docs/architecture/deploy-retro-21-08-2026-review.md`.** `apps/api` sets zero CORS headers, and the
 tenant session cookie uses the `__Host-` prefix (pins it to the exact host that set it, per spec) —
-together these make a cross-origin split between `app.<domain>` (UI) and `api.<domain>` (API)
+together these make a cross-origin split between the tenant UI hostname and the tenant API hostname
 **architecturally incompatible with login working at all**, not just slower or less elegant. The
-fix is routing the API under the same origin as the UI: `deploy/Caddyfile`'s `app.{$DOMAIN}` block
-does `handle_path /api/*` → `api:3000` before falling through to `web:3010`, and `web` must be
+fix is routing the API under the same origin as the UI: `deploy/Caddyfile`'s `kibo.{$DOMAIN}` block
+(named for the product; was `app.{$DOMAIN}` until 2026-08-30, renamed only because that subdomain
+was already taken — the hostname string itself carries no other meaning) does `handle_path /api/*`
+→ `api:3000` before falling through to `web:3010`, and `web` must be
 built with `NEXT_PUBLIC_API_URL=/api` to match. `NEXT_PUBLIC_PORTAL_API_URL` stays empty — the
-admin realm was already accidentally same-origin (`admin.<domain>` serves both the admin UI and,
-via a path matcher, `portal-api`) and doesn't need this.
+admin realm was already accidentally same-origin (`kiboadmin.<domain>` serves both the admin UI
+and, via a path matcher, `portal-api`) and doesn't need this. (The standalone `kiboapi.<domain>`
+site block in `Caddyfile` is a separate, directly-reachable API hostname — kept for parity/direct
+access, though the tenant UI's own login flow no longer needs it now that it calls the API
+same-origin via `kibo.<domain>/api/*`.)
 
 **`web`'s two `--build-arg`s are required, not optional.**
 `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_PORTAL_API_URL` are read by client-bundle code and Next.js only

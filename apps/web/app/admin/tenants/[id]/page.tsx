@@ -115,10 +115,14 @@ export default function TenantDetailPage() {
     setSaveError(null);
     setSaveOk(false);
     try {
+      const trimmedSubdomain = subdomain.trim().toLowerCase();
       const updated = await platformTenantsApi.update(tenantId, {
         name: name.trim(),
         edition,
-        subdomain: subdomain.trim().toLowerCase(),
+        // Omitted (not '') when unset — a tenant with no subdomain (e.g. one predating this field)
+        // must not have its every other edit rejected by re-submitting an empty, invalid value; the
+        // backend already treats an absent `subdomain` as "leave unchanged" (2026-08-30 fix).
+        subdomain: trimmedSubdomain ? trimmedSubdomain : undefined,
         themeColorRgb: themeColor,
       });
       if (logoFile) {

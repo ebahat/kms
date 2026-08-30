@@ -24,9 +24,15 @@ export class GroupsRepository extends ScopedRepository<Group> {
     return this.create({ name, members: [] }) as unknown as Promise<GroupDocument>;
   }
 
-  /** Name-uniqueness check, tenant-scoped like every other read here. */
+  /**
+   * Name-uniqueness check, tenant-scoped like every other read here. Case-insensitive (2026-08-29
+   * fix — "Sales" and "sales" used to be treated as distinct names, so a caller could create a
+   * duplicate group differing only in case): a MongoDB collation with strength 2 ignores case (and
+   * accents) in the equality comparison itself, so this stays a single indexable query rather than
+   * a regex — no user-controlled regex metacharacters to escape either.
+   */
   findOneByName(name: string): Promise<GroupDocument | null> {
-    return this.model.findOne({ name, ...this.scope() }) as unknown as Promise<GroupDocument | null>;
+    return this.model.findOne({ name, ...this.scope() }).collation({ locale: 'en', strength: 2 }) as unknown as Promise<GroupDocument | null>;
   }
 
   async rename(id: Types.ObjectId, name: string): Promise<GroupDocument | null> {
