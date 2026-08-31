@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/app-shell';
 import { CreateRootFolderModal } from '../../components/create-root-folder-modal';
+import { FavoriteStar } from '../../components/favorite-star';
 import { apiErrorMessage } from '../../lib/api';
+import { favoritesApi } from '../../lib/favorites-api';
 import { FolderSummary, foldersApi } from '../../lib/folders-api';
 import { useSession } from '../../lib/use-session';
 
@@ -16,12 +18,20 @@ export default function FoldersRootPage() {
   const [folders, setFolders] = useState<FolderSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [favoriteFolderIds, setFavoriteFolderIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     foldersApi
       .list()
       .then(setFolders)
       .catch((e) => setError(apiErrorMessage(e, 'שגיאה בטעינת התיקיות')));
+  }, []);
+
+  useEffect(() => {
+    favoritesApi
+      .list()
+      .then((favs) => setFavoriteFolderIds(new Set(favs.filter((f) => f.targetType === 'folder').map((f) => f.targetId))))
+      .catch(() => {});
   }, []);
 
   function onCreated(folderId: string) {
@@ -59,28 +69,29 @@ export default function FoldersRootPage() {
       ) : (
         <div className="bg-surface-container-lowest rounded-lg border border-outline-variant divide-y divide-outline-variant overflow-hidden shadow-sm">
           {folders.map((f) => (
-            <Link
-              key={f.id}
-              href={`/folders/${f.id}`}
-              className="flex items-center gap-3 px-4 h-row-height-standard hover:bg-surface-container-high transition-colors"
-            >
-              <span className="material-symbols-outlined text-tertiary-container" style={{ fontVariationSettings: "'FILL' 1" }}>
-                folder
-              </span>
-              <span className="font-body-md text-body-md text-on-surface">{f.name}</span>
-              {f.isPublic && (
-                <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full">ציבורי</span>
-              )}
-              {f.broaderThanParent && (
-                <span
-                  title={f.addedGroups.join(', ')}
-                  className="font-label-xs text-label-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-full flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-[14px]">warning</span>
-                  הרשאות מורחבות
+            <div key={f.id} className="flex items-center gap-3 px-4 h-row-height-standard hover:bg-surface-container-high transition-colors">
+              <Link href={`/folders/${f.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                <span className="material-symbols-outlined text-tertiary-container shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  folder
                 </span>
-              )}
-            </Link>
+                <span className="font-body-md text-body-md text-on-surface truncate">{f.name}</span>
+                {f.isPublic && (
+                  <span className="font-label-xs text-label-xs bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-full shrink-0">
+                    ציבורי
+                  </span>
+                )}
+                {f.broaderThanParent && (
+                  <span
+                    title={f.addedGroups.join(', ')}
+                    className="font-label-xs text-label-xs bg-error-container text-on-error-container px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                    הרשאות מורחבות
+                  </span>
+                )}
+              </Link>
+              <FavoriteStar targetType="folder" targetId={f.id} initialFavorite={favoriteFolderIds.has(f.id)} onError={setError} />
+            </div>
           ))}
         </div>
       )}

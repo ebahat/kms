@@ -76,8 +76,9 @@ async function login(page: import('@playwright/test').Page) {
 test('C1 golden path: login, create a user, see it pending, resend its invite', async ({ page }) => {
   await login(page);
   // Not `exact: true` — the material-symbols-outlined icon's ligature text ("admin_panel_settings")
-  // is part of the link's accessible name too.
-  await page.getByRole('link', { name: 'ניהול' }).click();
+  // is part of the link's accessible name too. Label renamed ניהול -> משתמשים 2026-08-30 (nav
+  // now reads "Users" instead of the generic "Management", matching what the link actually does).
+  await page.getByRole('link', { name: 'משתמשים' }).click();
   await page.waitForURL('**/users');
 
   // Create-user is its own screen (2026-08-29) — "צור משתמש" navigates to /users/new rather than

@@ -36,3 +36,5 @@ export * from './models/conversation.schema';
 export * from './repositories/conversations.repository';
 export * from './models/chat-message.schema';
 export * from './repositories/chat-messages.repository';
+export * from './models/favorite.schema';
+export * from './repositories/favorites.repository';

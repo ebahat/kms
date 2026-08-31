@@ -12,3 +12,4 @@ export * from './document-dto';
 export * from './folder-dto';
 export * from './group-dto';
 export * from './chat-dto';
+export * from './favorite-dto';

@@ -4,8 +4,10 @@ import { DragEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../components/app-shell';
+import { FavoriteStar } from '../../../components/favorite-star';
 import { FolderPicker } from '../../../components/folder-picker';
 import { ApiError, apiErrorMessage } from '../../../lib/api';
+import { favoritesApi } from '../../../lib/favorites-api';
 import { DocumentSummary, FolderDetail, FolderSummary, GrantedGroup, foldersApi } from '../../../lib/folders-api';
 import { useSession } from '../../../lib/use-session';
 
@@ -61,6 +63,22 @@ export default function FolderDetailPage() {
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null);
   const [documentRenameValue, setDocumentRenameValue] = useState('');
   const [grantedGroups, setGrantedGroups] = useState<GrantedGroup[] | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<{ folder: Set<string>; document: Set<string> }>({ folder: new Set(), document: new Set() });
+
+  // Global per-user list, independent of which folder is currently open — fetched once, not
+  // re-fetched on folderId navigation (unlike `load()` below). Each FavoriteStar manages its own
+  // optimistic state after the initial render, so this only needs to seed the starting values.
+  useEffect(() => {
+    favoritesApi
+      .list()
+      .then((favs) =>
+        setFavoriteIds({
+          folder: new Set(favs.filter((f) => f.targetType === 'folder').map((f) => f.targetId)),
+          document: new Set(favs.filter((f) => f.targetType === 'document').map((f) => f.targetId)),
+        }),
+      )
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setNotFound(false);
@@ -471,6 +489,7 @@ export default function FolderDetailPage() {
                       </span>
                     )}
                   </Link>
+                  <FavoriteStar targetType="folder" targetId={f.id} initialFavorite={favoriteIds.folder.has(f.id)} onError={setError} />
                   {f.tier === 'manage' && (
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                       <button
@@ -590,6 +609,7 @@ export default function FolderDetailPage() {
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-2 justify-end">
+                        <FavoriteStar targetType="document" targetId={d.id} initialFavorite={favoriteIds.document.has(d.id)} onError={setError} />
                         <button
                           onClick={() => onDownload(d.id)}
                           disabled={downloadingId === d.id}

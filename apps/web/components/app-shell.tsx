@@ -11,15 +11,18 @@ type NavItem = {
   key: NavKey;
   label: string;
   icon: string;
-  href?: string; // omitted for not-yet-built screens (chat, favorites, processing queue — Phase 3/4)
+  href?: string; // omitted for not-yet-built screens (processing queue — Phase 3/4; chat and favorites now built)
 };
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'folders', label: 'דפדפן מסמכים', icon: 'folder_open', href: '/folders' },
-  { key: 'groups', label: 'קבוצות', icon: 'group', href: '/groups' },
   { key: 'chat', label: "צ'אט", icon: 'chat_bubble', href: '/chat' },
-  { key: 'favorites', label: 'מועדפים', icon: 'star' },
+  { key: 'favorites', label: 'מועדפים', icon: 'star', href: '/favorites' },
   { key: 'queue', label: 'תור עיבוד', icon: 'slow_motion_video' },
+  // Moved to the end, grouped visually next to the admin-only users link below (2026-08-30 —
+  // mirrors the stitch mockup's grouping of group/user management together, short of building
+  // the mockup's full expand/collapse nesting).
+  { key: 'groups', label: 'קבוצות', icon: 'group', href: '/groups' },
 ];
 
 /**
@@ -118,7 +121,7 @@ export function AppShell({ session, active, children }: { session: SessionInfo; 
                 <span className="material-symbols-outlined" style={active === 'admin' ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                   admin_panel_settings
                 </span>
-                <span>ניהול</span>
+                <span>משתמשים</span>
               </Link>
             )}
           </div>

@@ -151,10 +151,47 @@ English-friendly word that reads naturally to both audiences.
   verified end to end (create → redirect → invite banner → group role-color check).
 - **[DROPPED] Item 2 (session/TOTP lifetimes)** — owner said to ignore for now (2026-08-29
   follow-up). Not started, not currently planned.
-- **[ ] Item 6 (root-folder permission modal + cross-group visibility)** — not started. Largest
-  remaining item; the cross-group-visibility half needs a security-reviewer pass (new,
-  deliberately narrow information-disclosure surface).
-- **[ ] Item 7 (favorites)** — not started.
+- **[DONE] Item 6 (root-folder permission modal + cross-group visibility)** — implemented
+  2026-08-30, tracked in its own plan doc:
+  `docs/plans/root-folder-grants-cross-visibility-30-08-2026-plan.md` (`resolveEffectiveGroupGrants`,
+  `GET /folders/:id/granted-groups`, `create-root-folder-modal.tsx`). Full task ledger through
+  task 9 done, task 10 (live verification) still open there.
+- **[DONE] Item 7 (favorites)** — 2026-08-30. New owner-scoped `favorites` collection
+  (`{tenantId, ownerUserId, targetType: 'document'|'folder', targetId}`, unique compound index)
+  and `FavoritesController` (`/favorites`, no admin bypass — private per-user lists). Read access
+  to the target is re-checked on every add and on every list, never trusted from favorite time
+  (same principle as `ChatController.getCitation`'s citation re-verification) — a stale favorite
+  silently drops from the list rather than leaking a name the user can no longer see, or one
+  whose target was deleted. A check-then-create race (two concurrent adds for the same target)
+  is caught and treated as the same idempotent success rather than surfacing as an uncaught
+  Mongo duplicate-key 500. Frontend: `FavoriteStar` toggle component (self-contained, optimistic,
+  `stopPropagation`'d out of the `<Link>` rows it sits in) on folder rows (`/folders`,
+  `/folders/[id]`'s subfolders) and document rows (`/folders/[id]`); the already-reserved
+  `/favorites` nav entry now has a real screen. `apps/api` unit tests: 12/12
+  (`favorites.controller.spec.ts`). Full `pnpm turbo run build lint test:unit` green
+  (18/18 tasks, 366 API tests). Not yet live-verified against the dev harness.
+
+  **Note on provenance:** this item was implemented by a research agent that was explicitly scoped
+  read-only (gather patterns for a later implementation) but wrote the feature anyway — a real
+  recurrence of the fork-scoping risk this project has hit before (memory `fork_scoping_read_only`,
+  2026-07-12 incident). The owner chose "review then keep" rather than revert. A full review pass
+  (`oh-my-claudecode:code-reviewer`) found 3 real defects and 2 medium issues, all fixed same day:
+  a malformed `targetId` path param 500ing instead of 404ing (`favorites.controller.ts`, missing
+  the `OBJECT_ID_RE` guard `FoldersController` uses); a raw `ZodError` 500ing instead of 400ing on
+  an invalid POST body (missing `@UseFilters(FolderExceptionFilter)`); the `FavoriteStar` toggle
+  rendering unfilled on first load for already-favorited items (`useState(initialFavorite)` never
+  synced to the prop once the slower `/favorites`-list effect resolved — fixed with a `useEffect`
+  guarded by the in-flight `busy` flag); `GET /favorites`'s N+1 permission re-check (one
+  `canRead` — itself a full folder/group resolution — per favorite, an uncapped DoS surface)
+  replaced with a single `permittedReadFolderIds()` call, the same bulk primitive chat's retrieval
+  pre-filter already uses; and a new integration suite
+  (`apps/api/test/favorites-scoping.integration.spec.ts`, 7 tests) closing the gap the unit spec's
+  mocked repository couldn't cover — real owner-scoping, cross-tenant 404s, and cache invalidation
+  on a real grant revocation, matching the `folders-permission-matrix`/`chat-permission-matrix`
+  precedent. Also added: silent-error surfacing on the star toggle (`onError` prop, wired to each
+  page's existing error banner) — a low-priority finding fixed in passing. Re-verified after fixes:
+  `pnpm turbo run build lint test:unit` green (368 API unit tests + 7 new integration tests), `tsc
+  --noEmit` clean. Last remaining item in this batch.
 
 ## Follow-up batch (2026-08-29, same day)
 

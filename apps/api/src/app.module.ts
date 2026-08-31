@@ -30,6 +30,9 @@ import {
   ChatMessage,
   ChatMessageSchema,
   ChatMessagesRepository,
+  Favorite,
+  FavoriteSchema,
+  FavoritesRepository,
   AuditEvent,
   AuditEventSchema,
   AuditEventsRepository,
@@ -57,6 +60,7 @@ import { FoldersController } from './folders/folders.controller';
 import { DocumentsController } from './documents/documents.controller';
 import { DocumentsPermissionsService } from './documents/documents-permissions.service';
 import { ChatController } from './chat/chat.controller';
+import { FavoritesController } from './favorites/favorites.controller';
 import { embeddingProviderProvider as chatEmbeddingProviderProvider, chatProviderProvider, retrievalProviderProvider } from './chat/chat.providers';
 import { EventsController } from './groups/events.controller';
 import { TasksController } from './groups/tasks.controller';
@@ -100,6 +104,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
       { name: Chunk.name, schema: ChunkSchema },
       { name: Conversation.name, schema: ConversationSchema },
       { name: ChatMessage.name, schema: ChatMessageSchema },
+      { name: Favorite.name, schema: FavoriteSchema },
       { name: AuditEvent.name, schema: AuditEventSchema },
       { name: RecycleBinEntry.name, schema: RecycleBinEntrySchema },
       { name: DeletionVerification.name, schema: DeletionVerificationSchema },
@@ -118,6 +123,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     GroupsController,
     DocumentsController,
     ChatController,
+    FavoritesController,
     EventsController,
     TasksController,
     CalendarController,
@@ -144,6 +150,7 @@ import { redisAppProvider, sessionServiceProvider, permissionCacheProvider } fro
     ChunksRepository,
     ConversationsRepository,
     ChatMessagesRepository,
+    FavoritesRepository,
     chatEmbeddingProviderProvider,
     chatProviderProvider,
     retrievalProviderProvider,
