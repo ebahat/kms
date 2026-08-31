@@ -39,7 +39,7 @@ multi-arch, or build natively on the VM.
 # From the repo root, on a machine with buildx (Apple Silicon builds arm64 natively):
 docker buildx build --platform linux/arm64 \
   -f apps/api/Dockerfile -t $REGISTRY/kms-api:latest --push .
-# repeat for portal-api
+# repeat for portal-api and worker (apps/worker/Dockerfile — one image, three WORKER_POOL deploys)
 
 # web needs two extra --build-arg flags — see the callout below, this is not optional.
 # NEXT_PUBLIC_API_URL=/api (a relative path, NOT https://api.<domain>) — see the same-origin
@@ -104,12 +104,48 @@ notices login is broken after the fact" into a deploy that fails loud. Needs `RE
 `VM_HOST`, `SMOKE_EMAIL`, `SMOKE_PASSWORD` in the environment (`VM_USER` defaults to `opc`) — see
 the script's own header for details. Not wired into CI; run it by hand until there is one.
 
+## Vertex AI credentials (chat/embedding, wired 2026-08-31)
+
+`worker-parse`/`worker-ai`/`worker-index` now run the real ingestion pipeline, and `api`/`worker-ai`
+call real Vertex AI Gemini 2.5 Flash + `text-multilingual-embedding-002` — live-verified against a
+real GCP project (`kibo-kms`). Before deploying:
+
+1. A GCP project with `aiplatform.googleapis.com` enabled and billing linked.
+2. A service account with `roles/aiplatform.user`, and a JSON key for it:
+   ```bash
+   gcloud iam service-accounts keys create vertex-key.json \
+     --iam-account=<sa-name>@<project-id>.iam.gserviceaccount.com --project=<project-id>
+   ```
+3. Copy that `vertex-key.json` to the VM alongside `docker-compose.yml`/`.env` — **never commit it**.
+   `docker-compose.yml` bind-mounts it read-only into `api`/`worker-ai` at `/secrets/vertex-key.json`
+   (path overridable via `.env`'s `VERTEX_KEY_FILE`), and `GOOGLE_APPLICATION_CREDENTIALS` points
+   there — this is Application Default Credentials via a key file, not the GCP metadata server (the
+   VM is on OCI, not GCP, so there is no metadata server to fall back to).
+4. Set `VERTEX_PROJECT_ID`/`VERTEX_REGION` in `.env` (see `.env.example`).
+
+The system-of-record copy of this key lives in OCI Vault (`kms-<env>-provider-vertex`, rotated via
+`oci vault secret update-secret-content` — same out-of-band pattern as the other provider-key
+secrets in `infra/modules/vault/main.tf`, never through Terraform). The file on the VM is a runtime
+artifact, not the source of truth — re-fetch it from Vault if the VM is ever rebuilt.
+
+Chat is still gated behind ADR-0012's opt-in `'llm'` tenant feature flag — a tenant needs
+`featureToggles.llm = true` (set via `portal-api`'s tenant-admin endpoints) before its users can
+reach `/chat` at all, independent of whether real credentials are wired.
+
+**Chat fallback (ADR-0008 amendment, 2026-08-31)**: if Vertex is unreachable or `VERTEX_PROJECT_ID`
+is unset, `api` falls back to OpenAI `gpt-5-mini` — set `OPENAI_API_KEY` in `.env` (generate at
+platform.openai.com/api-keys; no service-account/ADC complexity like Vertex, just the key). This
+replaced Claude in the fallback role; `ClaudeChatProvider` is still in the codebase, unwired, should
+the fallback slot move back. Same Vault system-of-record pattern as Vertex's key — the real value
+lives in `kms-<env>-provider-openai-fallback`, rotated via `oci vault secret update-base64`.
+
 ## What is NOT deployed here, on purpose
 
-`worker-parse`, `worker-ai`, `worker-index`, `clamd` — all Phase 3 (ingestion/OCR), descoped from
-v1.0 on 2026-08-15. Uploaded files land in Object Storage and stay `status: 'queued'` forever, which
-is the expected v1.0 behaviour, not a bug. Folder browsing, permissions, groups, upload and download
-all work without them.
+`clamd` — Phase 3's malware-scan stage stays on `FakePassThroughScanProvider`; a real ClamAV binding
+is separate, unstarted work. Uploaded files are still scanned (pass-through, not skipped), parsed,
+chunked, embedded, and indexed for real as of 2026-08-31 — `worker-parse`/`worker-ai`/`worker-index`
+are deployed (see above). Folder browsing, permissions, groups, upload and download all worked
+without them before this; ingestion and chat now work too.
 
 ## Operational gaps you are accepting (ADR-0015)
 

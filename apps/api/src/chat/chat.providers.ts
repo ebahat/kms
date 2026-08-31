@@ -2,10 +2,10 @@ import { Provider } from '@nestjs/common';
 import { ChunksRepository, DocumentsRepository } from '@kms/data';
 import {
   ChatProvider,
-  ClaudeChatProvider,
   EmbeddingProvider,
   FakeChatProvider,
   FakeEmbeddingProvider,
+  OpenAiChatProvider,
   VertexChatProvider,
   VertexEmbeddingProvider,
 } from '@kms/ai-providers';
@@ -25,14 +25,19 @@ export const embeddingProviderProvider: Provider = {
   },
 };
 
-/** Vertex (primary) → Claude (ADR-0008 fallback) → Fake (default, this sandbox). */
+/**
+ * Vertex (primary, unchanged) → OpenAI gpt-5-mini (ADR-0008 amendment
+ * 2026-08-31, replaces Claude as the fallback) → Fake (default, this
+ * sandbox). `ClaudeChatProvider`/`ANTHROPIC_API_KEY` are deliberately left
+ * unwired here rather than deleted, in case the fallback slot moves back.
+ */
 export const chatProviderProvider: Provider = {
   provide: CHAT_PROVIDER,
   useFactory: (): ChatProvider => {
     const projectId = process.env.VERTEX_PROJECT_ID;
     if (projectId) return new VertexChatProvider({ projectId, region: process.env.VERTEX_REGION ?? 'europe-west4' });
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (anthropicKey) return new ClaudeChatProvider(anthropicKey);
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) return new OpenAiChatProvider(openaiKey);
     return new FakeChatProvider();
   },
 };

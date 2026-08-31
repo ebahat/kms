@@ -14,13 +14,15 @@ const SYSTEM_INSTRUCTION =
 const NOT_FOUND_MESSAGE = 'לא נמצא מידע בנושא זה במסמכים הזמינים לך.';
 
 /**
- * Real Vertex AI Gemini binding (ADR-0008 primary choice, Flash tier), same
- * unverified status as `VertexEmbeddingProvider` — no live credentials in
- * this sandbox, and the ADR-0008 gate that would finalize this choice
- * hasn't run (document-chat-rag plan's scope cuts).
+ * Real Vertex AI Gemini binding (ADR-0008 primary choice, Flash tier).
+ * Live-verified 2026-08-31 against the real `kibo-kms` GCP project
+ * (`generateContent` returned a real HTTP 200 from `gemini-2.5-flash`) —
+ * the credential/IAM/billing chain works. The ADR-0008 Hebrew benchmark
+ * gate that would finalize this as the committed provider still hasn't
+ * run, so Flash-vs-fallback is not yet a closed decision, only a working one.
  */
 export class VertexChatProvider implements ChatProvider {
-  readonly modelName = 'gemini-flash-latest';
+  readonly modelName = 'gemini-2.5-flash';
 
   private readonly auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
 

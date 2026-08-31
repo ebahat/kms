@@ -24,6 +24,8 @@ TAG="${TAG:-latest}"
 echo "==> Building and pushing arm64 images ($REGISTRY, tag $TAG)"
 docker buildx build --platform linux/arm64 -f apps/api/Dockerfile -t "$REGISTRY/kms-api:$TAG" --push .
 docker buildx build --platform linux/arm64 -f apps/portal-api/Dockerfile -t "$REGISTRY/kms-portal-api:$TAG" --push .
+# One image, three WORKER_POOL deploys (worker-parse/worker-ai/worker-index in docker-compose.yml).
+docker buildx build --platform linux/arm64 -f apps/worker/Dockerfile -t "$REGISTRY/kms-worker:$TAG" --push .
 # NEXT_PUBLIC_API_URL=/api is not a default — it's the fix for Bug 1. See deploy/README.md.
 docker buildx build --platform linux/arm64 \
   --build-arg NEXT_PUBLIC_API_URL=/api \

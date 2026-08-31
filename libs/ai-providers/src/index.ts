@@ -8,3 +8,4 @@ export * from './chat-provider';
 export * from './fake-chat-provider';
 export * from './vertex-chat-provider';
 export * from './claude-chat-provider';
+export * from './openai-chat-provider';

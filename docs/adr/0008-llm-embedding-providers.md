@@ -107,3 +107,41 @@ Per-user 30 msg/h, per-tenant monthly token budgets, Advanced-OCR token caps enf
 - **Positive:** One DPA/vendor/network path if the gate passes; the gate converts "strong Hebrew performance" (PRD §10) from adjective to measurement; the abstraction layer makes the fallback path a config change + re-embed migration (test plan §8.1) rather than a rewrite.
 - **Negative / accepted risks:** The gate needs the `heb-qa`/`heb-prefix` corpora, which don't exist yet — corpus authoring is the eval lane's first implementation task (test plan §9 item 2) and **blocks final provider commitment**; single-vendor concentration accepted with named fallbacks; Gemini Flash may need a tier bump if §4.3 faithfulness misses — cost model rechecked then (pricing doc dependency).
 - **Follow-ups:** Author golden datasets (test plan §9 item 2); run the gate and record results here; sign/verify Vertex zero-retention + EU-processing DPA terms (sec §9; audit plan §4 item 10); pin exact endpoints into ADR-0007's `snet-ai` allowlist; judge-model validation session (test plan §4.0).
+
+### Chat fallback amendment: Claude → OpenAI gpt-5-mini (2026-08-31)
+
+**Change:** the chat-generation fallback (row 53 above) moves from Claude (Sonnet tier) to OpenAI
+`gpt-5-mini`. Vertex/Gemini stays primary, unchanged. `ClaudeChatProvider` is left in the codebase,
+unwired (`libs/ai-providers/src/claude-chat-provider.ts`), in case the fallback slot moves back —
+this is a routing change, not a retraction of Claude as a viable option.
+
+**Why, explicitly, since this reverses documented reasoning:** Option B's rationale for Claude
+specifically cited *"instruction-following strength on the grounding/injection-resistance
+behaviors sec §5.1 cares about"* — that reasoning is not superseded by anything technical found
+since; this is a deliberate cost-driven trade-off (product owner decision, 2026-08-31), not a new
+finding that Claude was wrong for the role. Per-message cost: gpt-5-mini ≈ $0.0034 vs Claude Sonnet
+5 ≈ $0.0230 (≈6.8x), using this project's 8K-input/700-output assumption — full comparison in
+`docs/costs/anthropic-vs-openai-cost-comparison-31-08-2026-research.md`.
+
+**What this does NOT change:** embeddings stay on Vertex `text-multilingual-embedding` (gpt-5-mini
+is chat-only, ADR-0002's index dimensionality is untouched); Advanced OCR's vision-model row is
+unaffected; the LLM-as-judge two-model rule (row 56) is unaffected — Claude remains available as a
+judge model if Gemini is ever the one being judged, independent of its chat-fallback status.
+
+**Compliance gap opened by this change, not yet closed:** OpenAI's zero-retention DPA / EU-residency
+terms (sec §9, PRD §3) have **not been verified** — Option C's own text in this ADR flagged OpenAI
+as adding *"a wholly new sub-processor"* without that verification done. This is now a real,
+outstanding compliance item, not a hypothetical one, since OpenAI is live in the fallback path.
+
+**Hebrew quality risk, unchanged from before this amendment:** gpt-5-mini was never a chat-fallback
+candidate evaluated in this ADR (Option C names OpenAI only as an *embedding*-fallback candidate) —
+its Hebrew faithfulness is exactly as unverified as Gemini's, and the ADR-0008 benchmark gate (Lane
+E1, still unrun) does not currently cover it. If the gate runs before gpt-5-mini is ever actually
+invoked as the live fallback in production, it should be added to that gate's scope, not assumed.
+
+**Real, live-verified finding from wiring this in:** `gpt-5-mini` is a reasoning model — a live test
+call with no `reasoning_effort` set spent 64 invisible "reasoning tokens" (billed as output) to
+produce the single word "PONG" (75 completion tokens total for a 1-word answer). `OpenAiChatProvider`
+sets `reasoning_effort: 'minimal'`, which live-verified brings this to 0 reasoning tokens — without
+it, real per-message cost and time-to-first-streamed-token would both exceed what this decision was
+made on.

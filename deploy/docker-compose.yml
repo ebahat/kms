@@ -3,11 +3,14 @@
 # Runs on the OCI Always Free Ampere A1 VM (2 OCPU / 12 GB, arm64) — and unchanged on Hetzner or any
 # other VPS, which is the point: the free tier is not load-bearing for the architecture.
 #
-# NOT here, deliberately: worker-parse, worker-ai, worker-index, clamd. All Phase 3 (ingestion/OCR),
-# descoped from v1.0 on 2026-08-15. Their absence is the design, not an omission.
+# worker-parse/worker-ai/worker-index added 2026-08-31 (real Vertex Gemini wiring) — the chat/RAG
+# feature merged 2026-08-28 had never actually been deployed until now; uploads previously stayed
+# `status: 'queued'` forever with no consumer running. Still NOT here, deliberately: clamd (Phase 3
+# OCR/scan stays on FakePassThroughScanProvider — a real malware-scan binding is a separate,
+# unstarted piece of work, not silently included by adding the workers).
 #
 # Memory limits are set on every service so a leak in one cannot take down the whole VM — with 12 GB
-# total and ~3.7 GB committed here, the reservations are conservative on purpose.
+# total and ~4.5 GB committed here, the reservations are conservative on purpose.
 
 name: kms
 
@@ -55,6 +58,18 @@ services:
       # actually sending. Separate gap from this action, flagged not fixed here.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       NOTIFICATION_FROM_ADDRESS: ${NOTIFICATION_FROM_ADDRESS:-noreply@example.com}
+      # Real Vertex AI (Gemini 2.5 Flash chat + text-multilingual-embedding-002), wired 2026-08-31 —
+      # live-verified against the real kibo-kms GCP project. With VERTEX_PROJECT_ID set,
+      # chatProviderProvider selects Vertex first (see chat.providers.ts's own precedence comment).
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      VERTEX_REGION: ${VERTEX_REGION:-europe-west4}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-key.json
+      # Chat fallback (ADR-0008 amendment 2026-08-31) — OpenAI gpt-5-mini, used only if Vertex is
+      # unreachable/unset. ANTHROPIC_API_KEY stays unset: ClaudeChatProvider is left in the codebase
+      # unwired, not deleted, in case the fallback slot moves back.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ${VERTEX_KEY_FILE:-./vertex-key.json}:/secrets/vertex-key.json:ro
     depends_on: [redis-app, redis-queue]
     deploy:
       resources:
@@ -101,6 +116,72 @@ services:
       resources:
         limits:
           memory: 1G
+
+  # Three deployments of one image (ADR-0003/0009's "one image, three pools" design, previously
+  # only ever a Cloud Run split — this is its first real deployment, as plain compose services on
+  # the same VM instead of separate sandboxes). WORKER_POOL selects which BullMQ queues each
+  # container consumes (apps/worker/src/pools.ts): parse=[scan,parse], ai=[chunk,embed]
+  # (ocr-classic/ocr-advanced have no registered processor — a deliberate cut, not routed to),
+  # index=[index]. All three share the same Vertex credential mount as `api` for the `ai` pool's
+  # embed stage; `worker-parse`/`worker-index` never call it (FakeEmbeddingProvider would be used
+  # if they did) but get the same env for consistency, not because they need it.
+  worker-parse:
+    image: ${REGISTRY}/kms-worker:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WORKER_POOL: parse
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_QUEUE_HOST: redis-queue
+      OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
+      OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
+      OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
+      # CLAMD_HOST intentionally unset — FakePassThroughScanProvider is what actually runs (see the
+      # top-of-file note); real malware scanning is a separate, unstarted piece of work.
+    depends_on: [redis-queue]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  worker-ai:
+    image: ${REGISTRY}/kms-worker:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WORKER_POOL: ai
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_QUEUE_HOST: redis-queue
+      OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
+      OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
+      OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
+      VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
+      VERTEX_REGION: ${VERTEX_REGION:-europe-west4}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/vertex-key.json
+    volumes:
+      - ${VERTEX_KEY_FILE:-./vertex-key.json}:/secrets/vertex-key.json:ro
+    depends_on: [redis-queue]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  worker-index:
+    image: ${REGISTRY}/kms-worker:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WORKER_POOL: index
+      MONGO_URI: ${MONGO_URI:?MONGO_URI is required}
+      REDIS_QUEUE_HOST: redis-queue
+      OCI_DATA_BUCKET: ${OCI_DATA_BUCKET:?OCI_DATA_BUCKET is required}
+      OCI_NAMESPACE: ${OCI_NAMESPACE:?OCI_NAMESPACE is required}
+      OCI_REGION: ${OCI_REGION:-il-jerusalem-1}
+    depends_on: [redis-queue]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
 
   # Two Redis instances with OPPOSITE eviction policies — ADR-0007's design review, finding 1.
   # ADR-0014's managed OCI Cache could NOT express this (flagged UNVERIFIED, both clusters left on
