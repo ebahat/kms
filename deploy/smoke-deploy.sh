@@ -22,12 +22,18 @@ VM_USER="${VM_USER:-opc}"
 TAG="${TAG:-latest}"
 
 echo "==> Building and pushing arm64 images ($REGISTRY, tag $TAG)"
-docker buildx build --platform linux/arm64 -f apps/api/Dockerfile -t "$REGISTRY/kms-api:$TAG" --push .
-docker buildx build --platform linux/arm64 -f apps/portal-api/Dockerfile -t "$REGISTRY/kms-portal-api:$TAG" --push .
+# --provenance=false --sbom=false: found 2026-09-01, the hard way. Modern buildx attaches an
+# attestation manifest by default; this OCIR endpoint pushes the real image layers fine (confirmed
+# in the build log: "pushing layers ... done") but then 403s on the HEAD request for the
+# attestation manifest blob specifically — not a credentials/IAM problem (verified: full tenancy
+# Administrator, auth token valid, `docker login` succeeds). Without these flags, every push fails
+# and the registry silently ends up with zero images despite the build itself succeeding.
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false -f apps/api/Dockerfile -t "$REGISTRY/kms-api:$TAG" --push .
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false -f apps/portal-api/Dockerfile -t "$REGISTRY/kms-portal-api:$TAG" --push .
 # One image, three WORKER_POOL deploys (worker-parse/worker-ai/worker-index in docker-compose.yml).
-docker buildx build --platform linux/arm64 -f apps/worker/Dockerfile -t "$REGISTRY/kms-worker:$TAG" --push .
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false -f apps/worker/Dockerfile -t "$REGISTRY/kms-worker:$TAG" --push .
 # NEXT_PUBLIC_API_URL=/api is not a default — it's the fix for Bug 1. See deploy/README.md.
-docker buildx build --platform linux/arm64 \
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false \
   --build-arg NEXT_PUBLIC_API_URL=/api \
   --build-arg NEXT_PUBLIC_PORTAL_API_URL= \
   -f apps/web/Dockerfile -t "$REGISTRY/kms-web:$TAG" --push .

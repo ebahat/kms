@@ -32,3 +32,10 @@ playwright-report/
 blob-report/
 .omc/
 .worktrees/
+
+# Local scratch — never commit (test-datasets/ holds real customer documents; login.txt holds dev-harness credentials)
+/test-datasets/
+/tmp/
+/login.txt
+/*.png
+/stitch_automated_document_reviewer/
